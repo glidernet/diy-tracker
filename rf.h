@@ -396,6 +396,7 @@ int RFM69_Configure(void)
                                                 // TX: DIO0 = TxReady,      DIO4 = TxReady
   RFM69_WriteByte(  0x2D, RFM69_TESTLNA);       // enable LNA, sensitivity up by 3dB ?
   RFM69_WriteByte(  0x20, RFM69_TESTDAGC);      // 0x20 when AfcLowBetaOn, 0x30 otherwise-> page 25
+  RFM69_WriteByte(  0x00, RFM69_AFCFEI);        // AfcAutoOn=0, AfcAutoclearOn=0
   RFM69_WriteByte(  0x20, RFM69_AFCCTRL);       // AfcLowBetaOn=1 -> page 64 -> page 33
   RFM69_WriteByte(   +10, RFM69_TESTAFC);       // [488Hz] if AfcLowBetaOn
   return 0; }
@@ -439,19 +440,19 @@ uint8_t Receive(void)                                           // see if a pack
   PPS_PhaseCalc();
   Beep(7500, 128);
 
-  UART1_Write('R'); UART1_Write(TX_FreqChan?'u':'d');
-  Format_UnsDec(UART1_Write, (uint16_t)PPS_Phase, 3);
+  // UART1_Write('R'); UART1_Write(TX_FreqChan?'u':'d');
+  // Format_UnsDec(UART1_Write, (uint16_t)PPS_Phase, 3);
 
   uint8_t RxRSSI = RFM69_ReadRSSI();                           // signal strength for the received packet
-  UART1_Write('r'); Format_Hex(UART1_Write, RxRSSI);
+  // UART1_Write('r'); Format_Hex(UART1_Write, RxRSSI);
   RxPacket.RxRSSI=RxRSSI;
 
-  int16_t RxFreqOfs = RFM69_ReadWord(RFM69_FEIMSB);            // frequency offset ?
-  UART1_Write('f'); Format_Hex(UART1_Write, (uint16_t)RxFreqOfs);
+  // int16_t RxFreqOfs = RFM69_ReadWord(RFM69_FEIMSB);            // frequency offset ?
+  // UART1_Write('f'); Format_Hex(UART1_Write, (uint16_t)RxFreqOfs);
 
   RFM69_ReadPacket(RxPktData, RxPktErr);                       // get the packet data from the FIFO
   uint8_t Check=LDPC_Check(RxPktData);
-  UART1_Write('c'); Format_UnsDec(UART1_Write, (uint16_t)Check, 2);
+  // UART1_Write('c'); Format_UnsDec(UART1_Write, (uint16_t)Check, 2);
 
   uint8_t BitErr=0;
   if(Check==0)
@@ -461,10 +462,10 @@ uint8_t Receive(void)                                           // see if a pack
     for(uint8_t Iter=32; Iter; Iter--)
     { Check=Decoder.ProcessChecks();
       if(Check==0) break; }
-    UART1_Write('d'); Format_UnsDec(UART1_Write, (uint16_t)Check, 2);
+    // UART1_Write('d'); Format_UnsDec(UART1_Write, (uint16_t)Check, 2);
     if(Check==0) { Decoder.Output(&RxPacket.Header); /* BitErr=Count1s(); */ }
   }
-  UART1_Write('\r'); UART1_Write('\n');
+  // UART1_Write('\r'); UART1_Write('\n');
 
   if(Check==0)
   { char Line[64];
@@ -586,9 +587,9 @@ void vTaskRF(void* pvParameters)
     } while(PPS_Phase<300);
     RxRssiLow = RxRssiSum/RxRssiCount; // [-0.5dBm]
 
-    xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
-    Format_String(UART1_Write,"RSSIl = "); Format_SignDec(UART1_Write, -(RxRssiLow/2), 3); Format_String(UART1_Write,"dBm\n");
-    xSemaphoreGive(UART1_Mutex);
+    // xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
+    // Format_String(UART1_Write,"RSSIl = "); Format_SignDec(UART1_Write, -(RxRssiLow/2), 3); Format_String(UART1_Write,"dBm\n");
+    // xSemaphoreGive(UART1_Mutex);
 
     TX_FreqChan=1; RFM69_WriteFreq(UppFreq+Parameters.RFchipFreqCorr);  // switch to upper frequency
     TX_Credit++;                                                        // new half-slot => increment the transmission credit

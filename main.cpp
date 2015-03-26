@@ -463,7 +463,7 @@ void vTaskCTRL(void* pvParameters)
   UART1_Mutex = xSemaphoreCreateMutex();
   vTaskDelay(5);
   xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
-  Format_String(UART1_Write, "TaskCTRL: ");
+  Format_String(UART1_Write, "TaskCTRL: MCU ID: ");
   Format_Hex(UART1_Write, UniqueID[0]); UART1_Write(' ');
   Format_Hex(UART1_Write, UniqueID[1]); UART1_Write(' ');
   Format_Hex(UART1_Write, UniqueID[2]); UART1_Write(' ');
