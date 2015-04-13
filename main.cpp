@@ -72,7 +72,7 @@ class FlashParameters
   { AcftID = UniqueID[0] ^ UniqueID[1] ^ UniqueID[2]; 
     AcftID = 0x07000000 | (AcftID&0x00FFFFFF);
     RFchipFreqCorr =   0;
-    RFchipTxPower  = +13; // +13dBm for RFM69W and +14dBm for RFM69HW
+    RFchipTxPower  = +14; // +13dBm for RFM69W and +14dBm for RFM69HW - at this time we cannot recognize which RF chip is being used
     RFchipTempCorr =   0;
     CONbaud  = 115200;
     GPSbaud  =   9600;
@@ -528,7 +528,9 @@ void prvSetupHardware(void)
 
   ADC_Configuration();
 
-  // Parameters.RFchipTxPower = +14; Parameters.WriteToFlash();
+  // to overwrite parameters
+  // Parameters.RFchipTxPower = +14; // for RFM69HW (H = up to +20dBm Tx power)
+  // Parameters.WriteToFlash();
 }
 
 #ifdef __cplusplus
