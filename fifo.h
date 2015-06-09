@@ -1,3 +1,7 @@
+#ifndef __FIFO_H__
+#define __FIFO_H__
+
+#include <stdint.h>
 
 template <class Type, const uint8_t Size=8> // size must be (!) a power of 2 like 4, 8, 16, 32, etc.
  class VolatileFIFO
@@ -54,3 +58,4 @@ template <class Type, const uint8_t Size=8> // size must be (!) a power of 2 lik
 */
 } ;
 
+#endif // __FIFO_H__

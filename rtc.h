@@ -9,7 +9,7 @@ void RTC_IRQHandler (void)
 { if(RTC_GetITStatus(RTC_IT_SEC) != RESET)
   { RTC_ClearITPendingBit(RTC_IT_SEC); // Clear the RTC Second interrupt
     RTC_WaitForLastTask();
-    UART1_TxChar('.'); }
+    /* UART1_TxChar('.'); */ }
 }
 
 void RTC_Configuration (void)

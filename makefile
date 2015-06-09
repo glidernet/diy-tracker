@@ -16,26 +16,61 @@ NM      = $(TPATH)/$(TCHAIN)-nm
 
 CPP_SRC += main.cpp
 
-CC_SRC += $(wildcard stm_lib/src/*.c)
+CPP_SRC += gps.cpp
+CPP_SRC += rf.cpp
+CPP_SRC += ctrl.cpp
+CPP_SRC += sens.cpp
+
+CPP_SRC += uart1.cpp
+CPP_SRC += uart2.cpp
+CPP_SRC += spi1.cpp
+CPP_SRC += spi2.cpp
+
+CPP_SRC += beep.cpp
+CPP_SRC += format.cpp
+CPP_SRC += ldpc.cpp
+CPP_SRC += bitcount.cpp
+CPP_SRC += intmath.cpp
+
+CPP_SRC += atmosphere.cpp
+
+INCDIR += -I.
+H_SRC  += $(wildcard *.h)
+
+INCDIR += -Icmsis -Icmsis_boot
+H_SRC  += $(wildcard cmsis/*.h)
+H_SRC  += $(wildcard cmsis_boot/*.h)
 CC_SRC += $(wildcard cmsis_boot/*.c)
 CC_SRC += $(wildcard cmsis_boot/startup/*.c)
+
+INCDIR += -Istm_lib/inc
+H_SRC  += $(wildcard stm_lib/inc/*.h)
+CC_SRC += $(wildcard stm_lib/src/*.c)
+
+INCDIR += -IFreeRTOS_8.2.0/Source/include -IFreeRTOS_8.2.0/Source/portable/GCC/ARM_CM3
+H_SRC  += $(wildcard FreeRTOS_8.2.0/Source/include/*.h)
+H_SRC  += $(wildcard FreeRTOS_8.2.0/Source/portable/GCC/ARM_CM3/*.h)
 CC_SRC += $(wildcard FreeRTOS_8.2.0/Source/*.c)
 CC_SRC += $(wildcard FreeRTOS_8.2.0/Source/portable/GCC/ARM_CM3/*.c)
 CC_SRC += FreeRTOS_8.2.0/Source/portable/MemMang/heap_4.c
 
-H_SRC  += $(wildcard *.h)
-H_SRC  += $(wildcard cmsis/*.h)
-H_SRC  += $(wildcard cmsis_boot/*.h)
-H_SRC  += $(wildcard stm_lib/inc/*.h)
-H_SRC  += $(wildcard FreeRTOS_8.2.0/Source/include/*.h)
-H_SRC  += $(wildcard FreeRTOS_8.2.0/Source/portable/GCC/ARM_CM3/*.h)
+INCDIR  += -Ifatfs
+H_SRC   += $(wildcard fatfs/*.h)
+CPP_SRC += sd.cpp
+CC_SRC  += fatfs/ff.c
 
-INCDIR     = -I.
-INCDIR    += -Icmsis -Icmsis_boot
-INCDIR    += -Istm_lib/inc
-INCDIR    += -IFreeRTOS_8.2.0/Source/include -IFreeRTOS_8.2.0/Source/portable/GCC/ARM_CM3
+H_SRC   += i2c.h
+CPP_SRC += i2c.cpp
 
-DEFS    = -D$(MCU) -DSTM32F10X_MD -DUSE_STDPERIPH_DRIVER -D__ASSEMBLY__ -DSUPPORT_CPLUSPLUS -DGCC_ARMCM3
+H_SRC   += adc.h
+CPP_SRC += adc.cpp
+
+H_SRC   += bmp180.h
+# CPP_SRC += bmp180.cpp
+
+CPP_SRC += nmea.cpp
+
+DEFS    = -D$(MCU) -DSTM32F10X_MD -DUSE_STDPERIPH_DRIVER -D__ASSEMBLY__ -DSUPPORT_CPLUSPLUS -DGCC_ARMCM3 -DSPEEDUP_STM_LIB
 
 CC_OBJ     = $(CC_SRC:.c=.o)
 CPP_OBJ    = $(CPP_SRC:.cpp=.o)
@@ -43,11 +78,14 @@ CPP_OBJ    = $(CPP_SRC:.cpp=.o)
 CC_OPT  = -mcpu=cortex-m3 -mthumb -Wall -ffunction-sections -g -Os -fstack-usage
 CPP_OPT = -mcpu=cortex-m3 -mthumb -Wall -ffunction-sections -g -Os -fstack-usage
 
+CC_OPT  += -fno-exceptions -fno-unwind-tables           # reduced the code size by 4kB
+CPP_OPT += -fno-exceptions -fno-unwind-tables -fno-rtti
+
 LDSCRIPT = link.ld
 
-LNK_OPT  = -Wl,-Map=main.map -Wl,--gc-sections
+LNK_OPT  = -Wl,-Map=main.map -Wl,--cref -Wl,--emit-relocs -Wl,--gc-sections
 LNK_OPT += -nostartfiles --specs=nosys.specs --specs=nano.specs
-LNK_OPT += -lgcc -lc -lstdc++
+LNK_OPT += -lgcc -lc # -lstdc++
 LNK_OPT += -T$(LDSCRIPT)
 
 all:	main.elf main.hex main.bin main.dmp
@@ -60,8 +98,8 @@ $(CPP_OBJ) : %.o : %.cpp makefile $(H_SRC)
 
 main.elf:       $(CC_OBJ) $(CPP_OBJ) $(H_SRC) makefile
 	$(CPP) $(CC_OPT) $(LNK_OPT) -o $@ $(CC_OBJ) $(CPP_OBJ)
-#	$(NM) -S --numeric-sort $@
-#	$(NM) -S --size-sort $@
+	$(NM) -S --numeric-sort $@
+	$(NM) -S --size-sort $@
 	$(SIZE) -A -x $@
 
 main.hex:       main.elf

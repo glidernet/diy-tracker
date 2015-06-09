@@ -3,12 +3,11 @@
 
 #include <stdint.h>
 
-uint8_t NMEA_Check(uint8_t *Data, uint8_t Len) // NMEA check-sum
-{ uint8_t Check=0;                             // to be calculated over characters between '$' and '*'
-  uint8_t Idx;                                 // but _excluding_ those.
-  for(Idx=0; Idx<Len; Idx++)
-    Check^=Data[Idx];
-  return Check; }
+uint8_t NMEA_Check(uint8_t *NMEA, uint8_t Len);
+uint8_t NMEA_AppendCheck(uint8_t *NMEA, uint8_t Len);
+inline uint8_t NMEA_AppendCheck(char *NMEA, uint8_t Len) { return NMEA_AppendCheck((uint8_t*)NMEA, Len); }
+uint8_t NMEA_AppendCheckCRNL(uint8_t *NMEA, uint8_t Len);
+inline uint8_t NMEA_AppendCheckCRNL(char *NMEA, uint8_t Len) { return NMEA_AppendCheckCRNL((uint8_t*)NMEA, Len); }
 
  class NMEA_RxMsg             // receiver for the NMEA sentences
 { public:
@@ -44,18 +43,18 @@ uint8_t NMEA_Check(uint8_t *Data, uint8_t Len) // NMEA check-sum
                    else Clear();           // if too long, then drop the frame completely
        }
        return; }
-/*
-   const void Print(void)
-     { uint8_t Idx;
-       for(Idx=0; Idx<Len; Idx++)
-         UART0_Tx(Data[Idx]);
-       UART0_Tx("\r\n"); }
-*/
+
    uint8_t isLoading(void) const
      { return State&0x01; }
 
    uint8_t isComplete(void) const
      { return State&0x02; }
+
+   uint8_t isLocked(void) const
+     { return State&0x04; }
+
+   uint8_t isEmpty(void) const
+     { return Len==0; }
 
    uint8_t isChecked(void) const    // is the NMEA checksum OK ?
      { if(Len<4) return 0;
@@ -79,43 +78,51 @@ uint8_t NMEA_Check(uint8_t *Data, uint8_t Len) // NMEA check-sum
        // if(Char<'a') return -1;
        // if(Char<='f') return Char-('a'-10);
        return -1; }
-/*
-   const uint8_t isEmpty(void)
-     { return Len==0; }
 
-   const uint8_t isLocked(void)
-     { return State&0x04; }
-*/
-   uint8_t *ParmPtr(uint8_t Field)      // get a pointer to given (comma separated) field
+   const uint8_t *ParmPtr(uint8_t Field) const            // get a pointer to given (comma separated) field
      { if(Field>=Parms) return 0;
        return Data+Parm[Field]; }
 /*
-   const uint8_t ParmLen(uint8_t Field)
+   uint8_t ParmLen(uint8_t Field) const
      { if(Field>=Parms) return 0;
        if(Field==(Parms-1)) return Len-4-Comma[Field];
        return Parm[Field+1]-Parm[Field]-1; }
 */
-   uint8_t isGPS(void) const                  // GPS sentence ?
+   uint8_t isGPS(void) const                   // GPS sentence ?
      {     if(Data[1]!='G') return 0;
        return Data[2]=='P'; }
 
    uint8_t isGPRMC(void) const                  // GPS recomended minimum data
-     {     if(!isGPS()) return 0;
-           if(Data[3]!='R') return 0;
-           if(Data[4]!='M') return 0;
+     { if(!isGPS()) return 0;
+       if(Data[3]!='R') return 0;
+       if(Data[4]!='M') return 0;
        return Data[5]=='C'; }
 
    uint8_t isGPGGA(void) const                  // GPS 3-D fix data
-     {     if(!isGPS()) return 0;
-           if(Data[3]!='G') return 0;
-           if(Data[4]!='G') return 0;
+     { if(!isGPS()) return 0;
+       if(Data[3]!='G') return 0;
+       if(Data[4]!='G') return 0;
        return Data[5]=='A'; }
 
    uint8_t isGPGSA(void) const                   // GPS satellite data
-     {     if(!isGPS()) return 0;
-           if(Data[3]!='G') return 0;
-           if(Data[4]!='S') return 0;
+     { if(!isGPS()) return 0;
+       if(Data[3]!='G') return 0;
+       if(Data[4]!='S') return 0;
        return Data[5]=='A'; }
+
+   uint8_t isPOGN(void) const                    // OGN dedicated NMEA sentence
+     { if(Data[1]!='P') return 0;
+       if(Data[2]!='O') return 0;
+       if(Data[3]!='G') return 0;
+       return Data[4]=='N'; }
+
+   uint8_t isPOGNB(void)                         // barometric report from the OGN tracker
+     { if(!isPOGN()) return 0;
+       return Data[5]=='B'; }
+
+   uint8_t isPOGNT(void)                         // other aircraft position (tracking) report from OGN trackers
+     { if(!isPOGN()) return 0;
+       return Data[5]=='T'; }
 
 } ;
 

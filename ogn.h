@@ -16,6 +16,12 @@
 
 #include "ldpc.h"
 
+#include "format.h"
+
+                          // the packet description here is how it look on the little-endian CPU before sending it to the RF chip
+                          // nRF905, CC1101, SPIRIT1, RFM69 chips actually reverse the bit order within every byte
+                          // thus on the air the bits appear MSbit first for every byte transmitted
+
 class OGN_Packet          // Packet structure for the OGN tracker
 { public:
 
@@ -39,7 +45,7 @@ class OGN_Packet          // Packet structure for the OGN tracker
    uint8_t State;         // 
    uint8_t RxRSSI;        // [-0.5dBm]
     int8_t RxFreqOfs;     // 
-   uint8_t Unused;
+   uint8_t RxErr;
 
 // union
 // { uint32_t FEC[2];       // Gallager code: 48 check bits for 160 user bits
@@ -117,6 +123,43 @@ class OGN_Packet          // Packet structure for the OGN tracker
             0.2*DecodeSpeed(), 0.1*DecodeHeading(), 0.1*DecodeClimbRate(), 0.1*DecodeTurnRate() ); }
 
 #endif // __AVR__
+
+   uint8_t WriteNMEA(char *NMEA)
+   { uint8_t Len=0;
+     Len+=Format_String(NMEA+Len, "$POGNT,");
+     // memcpy(NMEA+Len, "$POGNT,", 7); Len+=7;
+     Len+=Format_UnsDec(NMEA+Len, (uint16_t)getTime(), 2);
+     NMEA[Len++]=',';
+     NMEA[Len++]=HexDigit(getAcftType()); 
+     NMEA[Len++]=',';
+     NMEA[Len++]='0'+getAddrType();
+     NMEA[Len++]=',';
+     uint32_t Addr = getAddress();
+     Len+=Format_Hex(NMEA+Len, (uint8_t)(Addr>>16));
+     Len+=Format_Hex(NMEA+Len, (uint16_t)Addr);
+     NMEA[Len++]=',';
+     NMEA[Len++]='0'+getRelayCount();
+     NMEA[Len++]=',';
+     NMEA[Len++]='0'+getFixQuality();
+     NMEA[Len++]='0'+getFixMode();
+     NMEA[Len++]=',';
+     Len+=PrintLatitude(NMEA+Len, DecodeLatitude());               // []
+     NMEA[Len++]=',';
+     Len+=PrintLongitude(NMEA+Len, DecodeLongitude());             // []
+     NMEA[Len++]=',';
+     Len+=Format_UnsDec(NMEA+Len, (uint32_t)DecodeAltitude());     // [m]
+     NMEA[Len++]=',';
+     Len+=Format_UnsDec(NMEA+Len, DecodeSpeed()<<1, 2, 1);         // [kt]
+     NMEA[Len++]=',';
+     Len+=Format_UnsDec(NMEA+Len, DecodeHeading(), 4, 1);          // [deg]
+     NMEA[Len++]=',';
+     Len+=Format_SignDec(NMEA+Len, DecodeClimbRate(), 2, 1);       // [m/s]
+     NMEA[Len++]=',';
+     Len+=Format_SignDec(NMEA+Len, -(int16_t)RxRSSI/2);            // [dBm]
+     NMEA[Len++]=',';
+     Len+=Format_UnsDec(NMEA+Len, (uint16_t)RxErr);
+     Len+=NMEA_AppendCheckCRNL(NMEA, Len);
+     return Len; }
 
    uint8_t Print(char *Out)
    { uint8_t Len=0;
@@ -198,9 +241,9 @@ class OGN_Packet          // Packet structure for the OGN tracker
    bool goodAddrParity(void) const  { return ((Count1s(Header&0x0FFFFFFF)&1)==0); }  // Address parity should be EVEN
    void calcAddrParity(void)        { if(!goodAddrParity()) Header ^= 0x08000000; }  // if not correct parity, flip the parity bit
 
-   bool  isMeteo(void) const  { return Header &  0x04000000; } // this is a meteo report: sends wind speed/direction, pressure, temperatue and humidity
-   void setMeteo(void)        {        Header |= 0x04000000; }
-   void clrMeteo(void)        {        Header &= 0xFBFFFFFF; }
+   bool  isOther(void) const  { return Header &  0x04000000; } // this is a meteo or other report: sends wind speed/direction, pressure, temperatue and humidity
+   void setOther(void)        {        Header |= 0x04000000; }
+   void clrOther(void)        {        Header &= 0xFBFFFFFF; }
 
    uint8_t getAddrType(void) const   { return (Header>>24)&0x03; } // Address type: 0 = Random, 1 = ICAO, 2 = FLARM, 3 = OGN
    void    setAddrType(uint8_t Type) { Header = (Header&0xFCFFFFFF) | ((uint32_t)(Type&0x03)<<24); }
@@ -475,8 +518,16 @@ class OgnPosition
    { if((Flags&0x01)==0) return 0;
      return 1; }
 
+   bool isTimeValid(void) const
+   { return (Hour>=0) && (Min>=0) && (Sec>=0); }
+
+   bool isDateValid(void) const
+   { return (Year>=0) && (Month>=0) && (Day>=0); }
+
    bool isValid(void)                                // is GPS lock there ?
-   { if(FixQuality==0) return 0;
+   { if(!isTimeValid()) return 0;
+     if(!isDateValid()) return 0;
+     if(FixQuality==0) return 0;
      if(FixMode<2) return 0;
      if(Satellites<=0) return 0;
      return 1; }
@@ -544,8 +595,8 @@ class OgnPosition
    int8_t ReadGGA(NMEA_RxMsg &RxMsg)
    { if(RxMsg.Parms<14) return -1;                                                        // no less than 14 paramaters
      if(ReadTime((const char *)RxMsg.ParmPtr(0))>0) Flags|=0x01; else Flags&=0xFE;
-     FixQuality =ReadDec1(*RxMsg.ParmPtr(5)); if(FixQuality<0) FixQuality=0;              // fix quality
-     Satellites=ReadDec2((const char *)RxMsg.ParmPtr(6)); if(Satellites<0) Satellites=0;  // number of satellites
+     FixQuality =Read_Dec1(*RxMsg.ParmPtr(5)); if(FixQuality<0) FixQuality=0;              // fix quality
+     Satellites=Read_Dec2((const char *)RxMsg.ParmPtr(6)); if(Satellites<0) Satellites=0;  // number of satellites
      ReadHDOP((const char *)RxMsg.ParmPtr(7));                                            // horizontal dilution of precision
      ReadLatitude(*RxMsg.ParmPtr(2), (const char *)RxMsg.ParmPtr(1));                     // Latitude
      ReadLongitude(*RxMsg.ParmPtr(4), (const char *)RxMsg.ParmPtr(3));                    // Longitude
@@ -557,8 +608,8 @@ class OgnPosition
    { if(memcmp(GGA, "$GPGGA", 6)!=0) return -1;                                           // check if the right sequence
      uint8_t Index[20]; if(IndexNMEA(Index, GGA)<14) return -2;                           // index parameters and check the sum
      if(ReadTime(GGA+Index[0])>0) Flags|=0x01; else Flags&=0xFE;
-     FixQuality =ReadDec1(GGA[Index[5]]); if(FixQuality<0) FixQuality=0;                  // fix quality
-     Satellites=ReadDec2(GGA+Index[6]); if(Satellites<0) Satellites=0;                    // number of satellites
+     FixQuality =Read_Dec1(GGA[Index[5]]); if(FixQuality<0) FixQuality=0;                  // fix quality
+     Satellites=Read_Dec2(GGA+Index[6]); if(Satellites<0) Satellites=0;                    // number of satellites
      ReadHDOP(GGA+Index[7]);                                                              // horizontal dilution of precision
      ReadLatitude( GGA[Index[2]], GGA+Index[1]);                                          // Latitude
      ReadLongitude(GGA[Index[4]], GGA+Index[3]);                                          // Longitude
@@ -568,7 +619,7 @@ class OgnPosition
 
    int8_t ReadGSA(NMEA_RxMsg &RxMsg)
    { if(RxMsg.Parms<17) return -1;
-     FixMode =ReadDec1(*RxMsg.ParmPtr(1)); if(FixMode<0) FixMode=0;                       // fix mode
+     FixMode =Read_Dec1(*RxMsg.ParmPtr(1)); if(FixMode<0) FixMode=0;                       // fix mode
      ReadPDOP((const char *)RxMsg.ParmPtr(14));                                           // total dilution of precision
      ReadHDOP((const char *)RxMsg.ParmPtr(15));                                           // horizontal dilution of precision
      ReadVDOP((const char *)RxMsg.ParmPtr(16));                                           // vertical dilution of precision
@@ -577,7 +628,7 @@ class OgnPosition
    int8_t ReadGSA(const char *GSA)
    { if(memcmp(GSA, "$GPGSA", 6)!=0) return -1;                                           // check if the right sequence
      uint8_t Index[20]; if(IndexNMEA(Index, GSA)<17) return -2;                           // index parameters and check the sum
-     FixMode =ReadDec1(GSA[Index[1]]); if(FixMode<0) FixMode=0;
+     FixMode =Read_Dec1(GSA[Index[1]]); if(FixMode<0) FixMode=0;
      ReadPDOP(GSA+Index[14]);
      ReadHDOP(GSA+Index[15]);
      ReadVDOP(GSA+Index[16]);
@@ -636,10 +687,10 @@ class OgnPosition
   private:
 
    int8_t ReadLatitude(char Sign, const char *Value)
-   { int8_t Deg=ReadDec2(Value); if(Deg<0) return -1;
-     int8_t Min=ReadDec2(Value+2); if(Min<0) return -1;
+   { int8_t Deg=Read_Dec2(Value); if(Deg<0) return -1;
+     int8_t Min=Read_Dec2(Value+2); if(Min<0) return -1;
      if(Value[4]!='.') return -1;
-     int16_t FracMin=ReadDec4(Value+5); if(FracMin<0) return -1;
+     int16_t FracMin=Read_Dec4(Value+5); if(FracMin<0) return -1;
      // printf("Latitude: %c %02d %02d %04d\n", Sign, Deg, Min, FracMin);
      Latitude = Times60((int16_t)Deg) + Min;
      Latitude = Latitude*(int32_t)10000 + FracMin;
@@ -650,10 +701,10 @@ class OgnPosition
      return 0; }                                    // Latitude units: 0.0001/60 deg
 
    int8_t ReadLongitude(char Sign, const char *Value)
-   { int16_t Deg=ReadDec3(Value); if(Deg<0) return -1;
-     int8_t Min=ReadDec2(Value+3); if(Min<0) return -1;
+   { int16_t Deg=Read_Dec3(Value); if(Deg<0) return -1;
+     int8_t Min=Read_Dec2(Value+3); if(Min<0) return -1;
      if(Value[5]!='.') return -1;
-     int16_t FracMin=ReadDec4(Value+6); if(FracMin<0) return -1;
+     int16_t FracMin=Read_Dec4(Value+6); if(FracMin<0) return -1;
      Longitude = Times60((int16_t)Deg) + Min;
      Longitude = Longitude*(int32_t)10000 + FracMin;
      if(Sign=='W') Longitude=(-Longitude);
@@ -662,35 +713,35 @@ class OgnPosition
 
    int8_t ReadAltitude(char Unit, const char *Value)
    { if(Unit!='M') return -1;
-     return ReadFloat1(Altitude, Value); }          // Altitude units: 0.1 meter
+     return Read_Float1(Altitude, Value); }          // Altitude units: 0.1 meter
 
    int8_t ReadGeoidSepar(char Unit, const char *Value)
    { if(Unit!='M') return -1;
-     return ReadFloat1(GeoidSeparation, Value); }   // GeoidSepar units: 0.1 meter
+     return Read_Float1(GeoidSeparation, Value); }   // GeoidSepar units: 0.1 meter
 
    int8_t ReadSpeed(const char *Value)
-   { return ReadFloat1(Speed, Value); }             // Speed units: 0.1 knots
+   { return Read_Float1(Speed, Value); }             // Speed units: 0.1 knots
 
    int8_t ReadHeading(const char *Value)
-   { return ReadFloat1(Heading, Value); }           // Heading units: 0.1 degree
+   { return Read_Float1(Heading, Value); }           // Heading units: 0.1 degree
 
    int8_t ReadPDOP(const char *Value)
    { int16_t DOP;
-     if(ReadFloat1(DOP, Value)<1) return -1;
+     if(Read_Float1(DOP, Value)<1) return -1;
      if(DOP<10) DOP=10;
      else if(DOP>255) DOP=255;
      PDOP=DOP; return 0; }
 
    int ReadHDOP(const char *Value)
    { int16_t DOP;
-     if(ReadFloat1(DOP, Value)<1) return -1;
+     if(Read_Float1(DOP, Value)<1) return -1;
      if(DOP<10) DOP=10;
      else if(DOP>255) DOP=255;
      HDOP=DOP; return 0; }
 
    int ReadVDOP(const char *Value)
    { int16_t DOP;
-     if(ReadFloat1(DOP, Value)<1) return -1;
+     if(Read_Float1(DOP, Value)<1) return -1;
      if(DOP<10) DOP=10;
      else if(DOP>255) DOP=255;
      VDOP=DOP; return 0; }
@@ -698,24 +749,24 @@ class OgnPosition
    int8_t ReadTime(const char *Value)
    { int8_t Prev; int8_t Same=1;
      Prev=Hour;
-     Hour=ReadDec2(Value);  if(Hour<0) return -1; // read hour (two digits)
+     Hour=Read_Dec2(Value);  if(Hour<0) return -1; // read hour (two digits)
      if(Prev!=Hour) Same=0;
      Prev=Min;
-     Min=ReadDec2(Value+2); if(Min<0)  return -1; // read minute (two digits)
+     Min=Read_Dec2(Value+2); if(Min<0)  return -1; // read minute (two digits)
      if(Prev!=Min) Same=0;
      Prev=Sec;
-     Sec=ReadDec2(Value+4); if(Sec<0)  return -1; // read second (two digits)
+     Sec=Read_Dec2(Value+4); if(Sec<0)  return -1; // read second (two digits)
      if(Prev!=Sec) Same=0;
      Prev=FracSec;
      if(Value[6]=='.')                            // is there a second fraction ?
-     { FracSec=ReadDec2(Value+7); if(FracSec<0) return -1; }
+     { FracSec=Read_Dec2(Value+7); if(FracSec<0) return -1; }
      if(Prev!=FracSec) Same=0;
      return Same; }                             // return 1 when time did not change (both RMC and GGA were for same time)
 
    int8_t ReadDate(const char *Param)
-   { Day=ReadDec2(Param);     if(Day<0)   return -1; // read calendar year (two digits - thus need to be extended to four)
-     Month=ReadDec2(Param+2); if(Month<0) return -1; // read calendar month
-     Year=ReadDec2(Param+4);  if(Year<0)  return -1; // read calendar day
+   { Day=Read_Dec2(Param);     if(Day<0)   return -1; // read calendar year (two digits - thus need to be extended to four)
+     Month=Read_Dec2(Param+2); if(Month<0) return -1; // read calendar month
+     Year=Read_Dec2(Param+4);  if(Year<0)  return -1; // read calendar day
      return 0; }
 
    int8_t static IndexNMEA(uint8_t Index[20], const char *Seq) // index parameters and verify the NMEA checksum
@@ -736,6 +787,7 @@ class OgnPosition
 
   private:
 
+/* in format.cpp
    char static HexDigit(uint8_t Val)
    { Val&=0x0F; return Val<10 ? '0'+Val : 'A'+Val-10; }
 
@@ -776,7 +828,7 @@ class OgnPosition
      return Len; }                                       // return number of characters read
 
   template <class Type>
-   int8_t ReadFloat1(Type &Value, const char *Inp)       // read floating point, take just one digit after decimal point
+   int8_t static ReadFloat1(Type &Value, const char *Inp) // read floating point, take just one digit after decimal point
    { char Sign=Inp[0]; int8_t Len=0; int8_t Dig;
      if((Sign=='+')||(Sign=='-')) Len++;
      Len+=ReadUnsDec(Value, Inp); Value*=10;
@@ -786,7 +838,7 @@ class OgnPosition
      Value+=Dig; Len++;
      Dig=ReadDec1(Inp[Len]); if(Dig>=5) Value++;
      Ret: if(Sign=='-') Value=(-Value); return Len; }
-
+*/
 /* moved to format.h
   uint8_t static Format_UnsDec(char *Str, uint32_t Value, uint8_t MinDigits=1, uint8_t DecPoint=0)
   { uint32_t Base; uint8_t Pos, Len=0;
@@ -812,6 +864,11 @@ class OgnPosition
    uint32_t getUnixTime(void)                               // return the Unix timestamp (tested 2000-2099)
    { uint16_t Days = DaysSince00() + DaysSimce1jan();
      return Times60(Times60(Times24((uint32_t)(Days+10957)))) + Times60((uint32_t)(Times60((uint16_t)Hour) + Min)) + Sec; }
+
+   uint32_t getFatTime(void)                                // return timestamp in FAT format
+   { uint16_t Date = ((uint16_t)(Year+20)<<9) | ((uint16_t)Month<<5) | Day;
+     uint16_t Time = ((uint16_t)Hour<<11) | ((uint16_t)Min<<5) | (Sec>>1);
+     return ((uint32_t)Date<<16) | Time; }
 
   private:
 
