@@ -4,9 +4,15 @@
 TPATH = ../gcc-arm-none-eabi-4.9/bin
 TCHAIN = arm-none-eabi
 
-MCU = STM32F103C8  # STM32F103C8 for no-name STM32F1 board, STM32F103CB for Maple mini
+# list of optional features to be compiled in:
+# i2c1 ... I2C-1 interface
+# sdcard ... SD card interface with FAT filesystem
+# bmp ... barometric pressure sensor (selects i2c1 too)
+# sdlog ... logging to sdcard (selects sdcard too)
+# beeper ... beeper (vario etc)
+WITH_OPTS = bmp sdlog beeper
 
-WITH_OPTS = bmp
+MCU = STM32F103C8  # STM32F103C8 for no-name STM32F1 board, STM32F103CB for Maple mini
 
 #-------------------------------------------------------------------------------
 
@@ -22,13 +28,12 @@ C_SRC += uart2.cpp
 C_SRC += spi1.cpp
 C_SRC += spi2.cpp
 
-C_SRC += beep.cpp
 C_SRC += format.cpp
 C_SRC += ldpc.cpp
 C_SRC += bitcount.cpp
-C_SRC += intmath.cpp
 
-C_SRC += atmosphere.cpp
+C_SRC += adc.cpp
+C_SRC += nmea.cpp
 
 #-------------------------------------------------------------------------------
 
@@ -46,16 +51,6 @@ C_SRC  += $(wildcard FreeRTOS_8.2.0/Source/*.c)
 C_SRC  += $(wildcard FreeRTOS_8.2.0/Source/portable/GCC/ARM_CM3/*.c)
 C_SRC  += FreeRTOS_8.2.0/Source/portable/MemMang/heap_4.c
 
-INCDIR += -Ifatfs
-C_SRC  += sd.cpp
-C_SRC  += fatfs/ff.c
-
-
-C_SRC  += adc.cpp
-
-
-C_SRC += nmea.cpp
-
 # ..............................................................................
 
 WITH_OPTS ?=
@@ -63,14 +58,34 @@ WITH_DEFS =
 
 ifneq ($(findstring bmp,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_BMP
+  WITH_OPTS += i2c1
+  C_SRC += atmosphere.cpp
   # C_SRC += bmp180.cpp
-  WITH_I2C1 = 1
+  C_SRC += intmath.cpp
 endif
 
-ifeq ($(WITH_I2C1),1)
-  C_SRC  += i2c.cpp
+ifneq ($(findstring i2c1,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_I2C1
+  C_SRC  += i2c.cpp
 endif
+
+ifneq ($(findstring sdlog,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_SDLOG
+  WITH_OPTS += sdcard
+endif
+
+ifneq ($(findstring sdcard,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_SDCARD
+  INCDIR += -Ifatfs
+  C_SRC  += sd.cpp
+  C_SRC  += fatfs/ff.c
+endif
+
+ifneq ($(findstring beeper,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_BEEPER
+  C_SRC += beep.cpp
+endif
+
 
 #-------------------------------------------------------------------------------
 
@@ -106,7 +121,7 @@ CPP_OPT = $(Cx_OPT) -fno-rtti
 
 LDSCRIPT = link.ld
 
-LNK_OPT  = -Wl,-Map=main.map -Wl,--cref -Wl,--emit-relocs -Wl,--gc-sections
+LNK_OPT  = -Wl,-Map=$(OUTDIR)/main.map -Wl,--cref -Wl,--emit-relocs -Wl,--gc-sections
 LNK_OPT += -nostartfiles --specs=nosys.specs --specs=nano.specs
 LNK_OPT += -lgcc -lc # -lstdc++
 LNK_OPT += -T$(LDSCRIPT)
