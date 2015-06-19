@@ -19,14 +19,20 @@
 #include <semphr.h>
 #include <queue.h>
 
-#include "beep.h"
 
 #include "fifo.h"
 
 #include "uart1.h"
 #include "uart2.h"
-#include "i2c.h"
 #include "adc.h"
+
+#ifdef WITH_BEEPER
+  #include "beep.h"
+#endif
+
+#ifdef WITH_I2C1
+  #include "i2c.h"
+#endif
 
 #include "flashsize.h"
 #include "uniqueid.h"
@@ -210,7 +216,7 @@ static void LED_PCB_TimerCheck(void)
 
 /*
 void NVIC_Configuration (void)
-{ 
+{
   NVIC_InitTypeDef NVIC_InitStructure;
 
   NVIC_InitStructure.NVIC_IRQChannel = RTC_IRQn;                     // Enable the RTC Interrupt
@@ -250,9 +256,11 @@ void SysTick_Handler(void) { xPortSysTickHandler(); }
 */
 // ======================================================================================
 
-       uint8_t  Vario_Note=0x40;
-       uint16_t Vario_Period=800;
-       uint16_t Vario_Fill=50;
+#ifdef WITH_BEEPER
+
+uint8_t  Vario_Note=0x40;
+uint16_t Vario_Period=800;
+uint16_t Vario_Fill=50;
 
 static volatile uint16_t Vario_Time=0;
 
@@ -289,14 +297,12 @@ static void Play_TimerCheck(void)                // every ms serve the note play
     else
     { if(Play_Note!=0) Beep_Note(Play_Note=0x00); }
   }
-
 }
+
+#endif // WITH_BEEPER
 
 // ======================================================================================
 
-#ifdef __cplusplus
-  extern "C"
-#endif
 void prvSetupHardware(void)
 { RCC_Configuration();
 
@@ -310,7 +316,10 @@ void prvSetupHardware(void)
 
   UART2_Configuration(Parameters.GPSbaud); // GPS UART
   GPS_Configuration();                     // GPS PPS and Enable
+
+#ifdef WITH_I2C1
   I2C1_Configuration(400000);              // 400kHz I2C bus speed
+#endif
 
   SPI1_Configuration();                    // SPI1 for the RF chip
   RFM69_GPIO_Configuration();              // RFM69(H)W Reset/DIO0/...
@@ -318,7 +327,9 @@ void prvSetupHardware(void)
 
   LED_Configuration();
 
+#ifdef WITH_BEEPER
   Beep_Configuration();
+#endif
 
   // to overwrite parameters
   // Parameters.setTxTypeHW();
@@ -333,26 +344,24 @@ void prvSetupHardware(void)
   IWDG_Enable();                                    // enable RESET at timeout
 }
 
-#ifdef __cplusplus
-  extern "C"
-#endif
+extern "C"
 void vApplicationIdleHook(void) // when RTOS is idle: should call "sleep until an interrupt"
 { __WFI(); }                    // wait-for-interrupt
 
-#ifdef __cplusplus
-  extern "C"
-#endif
+extern "C"
 void vApplicationTickHook(void) // RTOS timer tick hook
 {
   IWDG_ReloadCounter(); // reset watch-dog at every tick (primitive, but enough to start)
 
   LED_PCB_TimerCheck(); // LED flash periodic check
 
+#ifdef WITH_BEEPER
   Play_TimerCheck();    // Play note periodic check
+#endif
 }
 
 int main(void)
-{ 
+{
   prvSetupHardware();
 
   // CTRL: UART1, Console, SD log
@@ -390,7 +399,7 @@ int main(void)
 // . packet retransmission and strategy
 // + queue for sounds to be played on the buzzer
 // + separate the UART code
-// + use watchdog to restart in case of a hangup 
+// + use watchdog to restart in case of a hangup
 // + print heap and task information when Ctlr-C pressed on the console
 // . try to run on Maple Mini (there is more Flash, but visibly no xtal)
 // + SD card slot and FatFS

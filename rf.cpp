@@ -20,7 +20,6 @@
 #include "bitcount.h"
 
 #include "uart1.h"                         // console UART
-#include "beep.h"
 #include "adc.h"
 
 #include "ogn.h"                           // OGN packet
@@ -104,8 +103,11 @@ static char Line[88];
 
 static uint8_t Receive(void)                                   // see if a packet has arrived
 { if(!TRX.DIO0_isOn()) return 0;
+
+#ifdef WITH_BEEPER
                                                                // if a new packet has been received
   Play(0x69, 3);
+#endif
 
   uint8_t RxRSSI = TRX.ReadRSSI();                           // signal strength for the received packet
   RxPacket.RxRSSI=RxRSSI;
@@ -198,7 +200,7 @@ static uint8_t Transmit(const uint8_t *PacketPtr, uint8_t Thresh, int MaxWait=7)
   TRX.WriteMode(RFM69_OPMODE_STDBY);                             // switch to standy
 
   TRX.WriteTxPowerMin();                                         // setup for RX
-  TRX.WriteSYNC(7, 7, OGN_SYNC);                                 // 
+  TRX.WriteSYNC(7, 7, OGN_SYNC);                                 //
   TRX.WriteMode(RFM69_OPMODE_RX);                                // back to receive
 
   return 1; }
@@ -215,9 +217,9 @@ static void StartRFchip(void)
   extern "C"
 #endif
 void vTaskRF(void* pvParameters)
-{ 
+{
                                           // set hardware interface
-  TRX.Select       = SPI1_Select;         // 
+  TRX.Select       = SPI1_Select;         //
   TRX.Deselect     = SPI1_Deselect;
   TRX.TransferByte = SPI1_TransferByte;
   TRX.DIO0_isOn    = RFM69_DIO0_isOn;
@@ -249,7 +251,7 @@ void vTaskRF(void* pvParameters)
   TX_FreqChan=0; TRX.WriteFreq(LowFreq+Parameters.RFchipFreqCorr);
   TRX.WriteSYNC(7, 7, OGN_SYNC); TRX.WriteMode(RFM69_OPMODE_RX);
   for( ; ; )
-  { 
+  {
 
     while(uxQueueMessagesWaiting(xQueuePacket)>1)         // see for new packets to be sent
     { xQueueReceive(xQueuePacket, &PacketPtr, 0); }
@@ -294,7 +296,7 @@ void vTaskRF(void* pvParameters)
       RX_Random = (RX_Random<<1) | (RxRSSI&1);                 // take lower bit for random number generator
       RxRssiSum+=RxRSSI; RxRssiCount++;
     } while(PPS_Phase()<400);                                  // keep going until 400 ms after PPS
-    RX_RssiUpp = RxRssiSum/RxRssiCount;                        // average RSSI [-0.5dBm]             
+    RX_RssiUpp = RxRssiSum/RxRssiCount;                        // average RSSI [-0.5dBm]
 
     uint16_t MCU_Temp = ADC1_Read(ADC_Channel_TempSensor);
     uint16_t MCU_Vref = ADC1_Read(ADC_Channel_Vrefint);

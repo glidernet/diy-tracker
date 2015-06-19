@@ -2,8 +2,12 @@
 #define __UART1_H__
 
 #include <stdint.h>
+#include "FreeRTOS.h"
+#include "semphr.h"
 
 #include "stm32f10x_usart.h"
+
+extern SemaphoreHandle_t UART1_Mutex;
 
 void UART1_Configuration (int BaudRate=115200);
 

@@ -15,10 +15,10 @@
 #include "main.h"
 #include "gps.h"
 
-SemaphoreHandle_t UART1_Mutex;            // Console port Mutex
-
-#include "diskio.h"
-#include "ff.h"
+#ifdef WITH_SDCARD
+  #include "diskio.h"
+  #include "ff.h"
+#endif
 
 uint32_t get_fattime(void) { return GPS_FatTime; } // for FatFS to have the correct time
 
@@ -34,7 +34,7 @@ static void PrintParameters(void)                               // print paramet
 }
 
 static void ProcessCtrlC(void)                                  // print system state to the console
-{ 
+{
   PrintParameters();
 
   size_t FreeHeap = xPortGetFreeHeapSize();
@@ -87,7 +87,7 @@ static void ProcessInput(void)
   }
 }
 
-#ifdef LOG_ENABLE
+#ifdef WITH_SDLOG
 static   uint16_t  LogDate     =              0;                  // [days] date = UnixTime/86400
 static       char  LogName[14] = "TRK00000.LOG";                  // log file name
 static FRESULT     LogErr;                                        // most recent error/state of the logging system
@@ -111,7 +111,7 @@ void Log_Open(void)
   LogOpenTime=xTaskGetTickCount();                                // record the system time when log was open
 
   if(!LogErr)
-  { 
+  {
     xSemaphoreTake(UART1_Mutex, portMAX_DELAY);                   // ask exclusivity on UART1
     Format_String(UART1_Write, "TaskCTRL: writing to ");          // report open file name
     Format_String(UART1_Write, LogName);
@@ -128,7 +128,7 @@ void Log_Write(const char *Line)                                  // write the L
     if(!LogErr) Log_Open();                                       // if file system OK, thne open the file
   }
   if(LogErr)                                                      // if in error: quit
-  { 
+  {
     return ; }
   // fputs(Line, &LogFile);
   UINT WrLen;
@@ -156,18 +156,12 @@ void ProcessLog(void)                                     // process the queue o
     Log_Write(Line);                                      // write the line to the log file
   Log_Check();                                            // time check the log file
 }
-#endif // LOG_ENABLE
+#endif // WITH_SDLOG
 
-#ifdef __cplusplus
-  extern "C"
-#endif
+extern "C"
 void vTaskCTRL(void* pvParameters)
-{ 
-  // UART1_Configuration(Parameters.CONbaud);
-
-  UART1_Mutex = xSemaphoreCreateMutex();
-
-#ifdef LOG_ENABLE
+{
+#ifdef WITH_SDLOG
   LogQueue = xQueueCreate(8, sizeof(char *));
   LogErr=f_mount(&FatFs, "", 0);
   if(!LogErr) Log_Open();
@@ -181,7 +175,7 @@ void vTaskCTRL(void* pvParameters)
   Format_Hex(UART1_Write, UniqueID[1]); UART1_Write(' ');
   Format_Hex(UART1_Write, UniqueID[2]); UART1_Write(' ');
   Format_UnsDec(UART1_Write, getFlashSize()); Format_String(UART1_Write, "kB\n");
-#ifdef LOG_ENABLE
+#ifdef WITH_SDLOG
   if(!LogErr)
   { Format_String(UART1_Write, "SD card: ");
     Format_UnsDec(UART1_Write, (uint32_t)FatFs.csize * (uint32_t)(FatFs.free_clust>>1), 4, 3 );
@@ -196,7 +190,7 @@ void vTaskCTRL(void* pvParameters)
   { vTaskDelay(1);
 
     ProcessInput();                                             // process console input
-#ifdef LOG_ENABLE
+#ifdef WITH_SDLOG
     ProcessLog();                                               // process lines to written to the log file
 #endif
 

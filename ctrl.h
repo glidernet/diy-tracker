@@ -1,14 +1,9 @@
 #include "FreeRTOS.h"
 #include "task.h"
-#include "semphr.h"
 #include "queue.h"
 
-#define LOG_ENABLE
-
-extern SemaphoreHandle_t UART1_Mutex;
-extern xQueueHandle      LogQueue;
-
-#ifdef LOG_ENABLE
+#ifdef WITH_SDLOG
+extern xQueueHandle LogQueue;
 inline void LogLine(char *Line, TickType_t Wait=2) { xQueueSend(LogQueue, &Line, Wait); }
 #else
 inline void LogLine(char *Line, TickType_t Wait=2) { }
@@ -18,4 +13,3 @@ inline void LogLine(char *Line, TickType_t Wait=2) { }
   extern "C"
 #endif
 void vTaskCTRL(void* pvParameters);
-
