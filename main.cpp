@@ -127,6 +127,7 @@ void RCC_Configuration(void)
   uint32_t Timeout=80000;
   while (RCC_GetFlagStatus(RCC_FLAG_HSERDY) == RESET)    // Wait till HSE is not ready
   { Timeout--; if(Timeout==0) break; }                   // but it may never come up... as some boards have no Xtal !
+  if(Timeout==0) RCC_HSEConfig (RCC_HSE_OFF);            // if Timeout went down to zero: Xtal did not come up
 
   // while (RCC_GetFlagStatus(RCC_FLAG_HSIRDY) == RESET);   // Wait till HSI is not ready
 
