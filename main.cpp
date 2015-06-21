@@ -68,7 +68,7 @@ FlashParameters Parameters; // parameters to be stored in Flash, on the last pag
 
 // Board pin-out: "no name" STM32F103C8T6, CPU chip facing up
 
-//                  Vbat     3.3V
+//                  Vbat     3.3V           -> LED, I2C pull-up
 // LED <-           PC13     GND            <- Li-Ion battery
 //           XTAL - PC14     5.0V           <- Li-Ion battery
 //           XTAL - PC15     PB 9 TIM4.CH4  -> Buzzer
@@ -80,13 +80,13 @@ FlashParameters Parameters; // parameters to be stored in Flash, on the last pag
 // RF  <- SPI1.SCK  PA 5     PB 3           <- RF.DIO4
 // RF  -> SPI1.MISO PA 6     PA15
 // RF  <- SPI1.MOSI PA 7     PA12 TIM1.ETR
-//        TIM3.CH3  PB 0     PA11 TIM1.CH4
+// POT -> TIM3.CH3  PB 0     PA11 TIM1.CH4
 //        TIM3.CH4  PB 1     PA10 USART1.Rx <- Console/BT
 //     <- USART3.Tx PB10     PA 9 USART1.Tx -> Console/BT
 //     -> USART3.Rx PB11     PA 8 TIM1.CH1
 //                 RESET     PB15 SPI2.MOSI -> SD card
-//                  3.3V     PB14 SPI2.MISO <- SD card
-//                   GND     PB13 SPI2.SCK  -> SD card
+// RF  <-           3.3V     PB14 SPI2.MISO <- SD card
+// RF  <-            GND     PB13 SPI2.SCK  -> SD card
 //                   GND     PB12 SPI2.SS   -> SD card
 
 
@@ -118,12 +118,17 @@ FlashParameters Parameters; // parameters to be stored in Flash, on the last pag
 
 // ======================================================================================
 
+// #define USE_XTAL
+
 void RCC_Configuration(void)
 {
-  RCC_DeInit ();                        // RCC system reset(for debug purpose)
-  RCC_HSEConfig (RCC_HSE_ON);           // Enable HSE (High Speed External clock = Xtal)
+  RCC_DeInit ();                                         // RCC system reset(for debug purpose)
+  RCC_HSEConfig (RCC_HSE_ON);                            // Enable HSE (High Speed External clock = Xtal)
+  uint32_t Timeout=80000;
+  while (RCC_GetFlagStatus(RCC_FLAG_HSERDY) == RESET)    // Wait till HSE is not ready
+  { Timeout--; if(Timeout==0) break; }                   // but it may never come up... as some boards have no Xtal !
 
-  while (RCC_GetFlagStatus(RCC_FLAG_HSERDY) == RESET);   // Wait till HSE is ready
+  // while (RCC_GetFlagStatus(RCC_FLAG_HSIRDY) == RESET);   // Wait till HSI is not ready
 
   RCC_HCLKConfig   (RCC_SYSCLK_Div1);                    // HCLK   = SYSCLK  (for AHB bus)
   RCC_PCLK2Config  (RCC_HCLK_Div1);                      // PCLK2  = HCLK    (for APB2 periph.  max. 72MHz)
@@ -134,7 +139,11 @@ void RCC_Configuration(void)
   FLASH_SetLatency(FLASH_Latency_2);                     // Flash 2 wait state
   FLASH_PrefetchBufferCmd(FLASH_PrefetchBuffer_Enable);  // Enable Prefetch Buffer
 
-  RCC_PLLConfig (RCC_PLLSource_HSE_Div2, RCC_PLLMul_15); // PLLCLK = 4MHz * 15 = 60 MHz
+  if(Timeout)                                            // if HSE came up: use it
+    RCC_PLLConfig (RCC_PLLSource_HSE_Div2, RCC_PLLMul_15); // PLLCLK = 4MHz * 15 = 60 MHz
+  else                                                   // if HSE did not come up: us internal oscilator
+    RCC_PLLConfig (RCC_PLLSource_HSI_Div2, RCC_PLLMul_15); // PLLCLK = 4MHz * 15 = 60 MHz
+
   RCC_PLLCmd (ENABLE);                                   // Enable PLL
   while (RCC_GetFlagStatus(RCC_FLAG_PLLRDY) == RESET);   // Wait till PLL is ready
   RCC_SYSCLKConfig (RCC_SYSCLKSource_PLLCLK);            // Select PLL as system clock source
@@ -425,6 +434,7 @@ int main(void)
 // . resolve extra dummy byte transfer for I2C_Read()
 // + send pressure data in $POGNB
 // + vario sound
+// + adapt vario integration time to link/sink
 // + separate task for BMP180 and other I2C sensors
 // . send standard/pressure altitude in the packet ?
 // . when measuring pressure avoid times when TX or LOG is active to reduce noise ?
