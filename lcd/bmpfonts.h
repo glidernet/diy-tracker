@@ -35,6 +35,12 @@ enum BmpFonts
   font_7x15,
 };
 
+// special characters
+#define CH_HALFSP '\x80' // half space
+#define CS_HALFSP "\x80" // half space
+#define CH_DEGREE '\x81' // degree of Celsius sign
+#define CS_DEGREE "\x81" // degree of Celsius sign
+
 //------------------------------------------------------------------------------
 
 struct BmpFont

@@ -28,11 +28,14 @@
 
 //------------------------------------------------------------------------------
 
+#ifdef WITH_BUTTONS
+
 // Process button, return true if button has been accepted (otherwise pass
 // to other subsystem)
 // Called from ctrl thread!
 bool DisplProcBtn(Buttons btn);
 
+#endif
 //------------------------------------------------------------------------------
 
 #ifdef __cplusplus
@@ -41,7 +44,7 @@ bool DisplProcBtn(Buttons btn);
 
 //------------------------------------------------------------------------------
 
-void vTaskDispl(void* pvParameters);
+void vTaskLcd(void* pvParameters);
 
 //------------------------------------------------------------------------------
 

@@ -32,6 +32,11 @@
 // button input handler
 template<uint16_t pin> struct ButtonInpA
 {
+  enum Const
+  {
+    min_still_time = 70,
+  };
+
   static void Init()
   {
     GPIO_InitTypeDef GPIO_InitStructure;
@@ -43,15 +48,38 @@ template<uint16_t pin> struct ButtonInpA
   // test for button press
   static bool Test()
   {
+    static bool lastSt   = false;
+    static bool reported = false;
+    static TickType_t lastTm = 0;
+
+    if (((GPIO_ReadInputDataBit(GPIOA, pin) == Bit_RESET)) != lastSt)
+    {
+      lastSt = !lastSt;
+      lastTm = xTaskGetTickCount();
+      reported = false;
+      //~ xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
+      //~ Format_UnsDec(UART1_Write, pin);
+      //~ if (lastSt)
+        //~ Format_String(UART1_Write, " XXXX on XXX\n");
+      //~ else
+        //~ Format_String(UART1_Write, " XXXX off XXX\n");
+      //~ xSemaphoreGive(UART1_Mutex);
+    }
+    else if (lastSt && (xTaskGetTickCount() - lastTm) >= min_still_time && !reported)
+    //else if (lastSt && !reported)
+    {
+      reported = true;
+      return true;
+    }
     return false;
   }
 };
 
 //------------------------------------------------------------------------------
 
-static ButtonInpA<GPIO_Pin_11> buttonUp;
-static ButtonInpA<GPIO_Pin_12> buttonDown;
-static ButtonInpA<GPIO_Pin_15> buttonSet;
+typedef ButtonInpA<GPIO_Pin_11> buttonUp;
+typedef ButtonInpA<GPIO_Pin_12> buttonDown;
+typedef ButtonInpA<GPIO_Pin_15> buttonSet;
 
 #endif
 //------------------------------------------------------------------------------
@@ -123,7 +151,12 @@ static void ProcessInput(void)
   }
 
 #if defined WITH_BUTTONS && defined WITH_LCD5110
-  if (buttonUp.Test())
+  if (buttonUp::Test())
+    DisplProcBtn(btn_up);
+  if (buttonDown::Test())
+    DisplProcBtn(btn_down);
+  if (buttonSet::Test())
+    DisplProcBtn(btn_set);
 #endif
 }
 
@@ -203,9 +236,9 @@ extern "C"
 void vTaskCTRL(void* pvParameters)
 {
 #ifdef WITH_BUTTONS
-  buttonUp.Init();
-  buttonDown.Init();
-  buttonSet.Init();
+  buttonUp::Init();
+  buttonDown::Init();
+  buttonSet::Init();
 #endif
 
 #ifdef WITH_SDLOG
@@ -240,7 +273,6 @@ void vTaskCTRL(void* pvParameters)
 #ifdef WITH_SDLOG
     ProcessLog();                                               // process lines to written to the log file
 #endif
-
   }
 }
 

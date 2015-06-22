@@ -57,7 +57,7 @@ enum DisplayPage
   displ_rxstats,
 };
 
-static DisplayPage activePage = displ_navig;
+static volatile DisplayPage activePage = displ_navig;
 
 //------------------------------------------------------------------------------
 
@@ -236,7 +236,7 @@ public:
     }
   }
 
-  // setCircle draws a circle centered around x0,y0 with a defined
+  // Draws a circle centered around x0,y0 with a defined
   // radius. The circle can be black or white. And have a line
   // thickness ranging from 1 to the radius of the circle.
   // This function was grabbed from the SparkFun ColorLCDShield
@@ -305,36 +305,58 @@ public:
     }
   }
 
+  // Count number of minimum pixels required by string.
+  static int PixelWidth(const char* dString)
+  {
+    int cnt = 0;
+    while (*dString != '\0')
+    {
+      if (*dString++ == CH_HALFSP)
+        cnt += font->width / 2 + letterSpace;
+      else
+        cnt += LetterWidth();
+    }
+    // don't count last letterspace
+    cnt -= letterSpace;
+    if (cnt < 0)
+      cnt = 0;
+    return cnt;
+  }
+
   // String draws a string of characters, calling Char with
   // progressive coordinates until it's done.
   // This function was grabbed from the SparkFun ColorLCDShield
   // library.
   static void String(const char* dString, int x, int y, bool bw = black, Align align = align_left)
   {
-    size_t len;
-
     // for right align at x, calculate leftmost coordinate
     if (align == align_right)
     {
-      len = strlen(dString);
-      x = x - len * LetterWidth() + letterSpace + 1;
+      x = x - PixelWidth(dString) + 1;
     }
     // for center align at x, calculate leftmost coordinate
     else if (align == align_center)
     {
-      len = strlen(dString);
-      x = (x - len * LetterWidth() + letterSpace + 1) / 2;
+      x = x + (Width() - x - 1 - PixelWidth(dString) + 1) / 2;
     }
 
-    while (*dString != 0x00) // loop until null terminator
+    while (*dString != '\0') // loop until null terminator
     {
-      Char(*dString++, x, y, bw);
-      x += font->width;
+      if (*dString == CH_HALFSP)
+      { // half-space
+        Rect(x, y, x + font->width / 2, y + font->height - 1, true, !bw);
+        x += font->width / 2;
+      }
+      else
+      {
+        Char(*dString++, x, y, bw);
+        x += font->width;
+      }
 
       // inter-char space
       if ((x + letterSpace) <= Width())
       {
-        Rect(x, y, x + letterSpace, y+font->height - 1, true, !bw);
+        Rect(x, y, x + letterSpace, y + font->height - 1, true, !bw);
         x += letterSpace;
       }
 
@@ -350,7 +372,7 @@ public:
   // This function will draw an array over the screen. (For now) the
   // array must be the same size as the screen, covering the entirety
   // of the display.
-  static void Bitmap(char* bitArray)
+  static void Bitmap(const uint8_t* bitArray)
   {
     for (int i=0; i<(Width() * Height() / 8); i++)
       screenMap[i] = bitArray[i];
@@ -484,8 +506,6 @@ protected:
   //
   // Because the PCD8544 won't let us write individual pixels at a
   // time, this is how we can make targeted changes to the display.
-  //
-  // Preloaded with OGN logo.
   static uint8_t screenMap[display_width * display_height / 8];
 
   // Transfer type for LCD controller
@@ -549,45 +569,10 @@ uint8_t Display::lineSpace = Display::font->lineSpace;;
 
 
 //static
-uint8_t Display::screenMap[display_width * display_height / 8] =
-{ // preloaded with OGN logo
-  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F,
-  0x3F, 0x1F, 0x0F, 0x07, 0x07, 0x03, 0x03, 0x03, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-  0x01, 0x01, 0x01, 0x01, 0x03, 0x03, 0x03, 0x07, 0x0F, 0x0F, 0x1F, 0x3F, 0x7F, 0xFF, 0xFF, 0xFF,
-  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x3F,
-  0x07, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC0, 0xE0, 0xF0, 0xF0, 0xF8, 0xF8,
-  0xF8, 0xFC, 0xFC, 0xF8, 0xF8, 0xF8, 0xF0, 0xE0, 0xE0, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-  0x00, 0x00, 0x03, 0x07, 0x3F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-  0xFF, 0xFF, 0xFF, 0x02, 0x02, 0x02, 0x02, 0x06, 0x02, 0x02, 0x02, 0x02, 0x3E, 0x03, 0x03, 0x03,
-  0x07, 0x3F, 0x7F, 0xC1, 0x81, 0x01, 0x81, 0xC1, 0xF1, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x7E, 0x18,
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xF8, 0xC0, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-  0x40, 0x00, 0x00, 0x04, 0x08, 0x00, 0x30, 0x38, 0x3F, 0x3F, 0x3F, 0x3F, 0x1F, 0x1F, 0x0F, 0x07,
-  0x07, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC0, 0xE0, 0xFC, 0xFF, 0xFF, 0xFF,
-  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE,
-  0xFC, 0xF8, 0xF0, 0xE0, 0xE0, 0xE0, 0xE0, 0xCF, 0x81, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
-  0x80, 0x80, 0x80, 0x80, 0xC0, 0xC0, 0xC0, 0xE0, 0xF0, 0xF0, 0xF8, 0xFC, 0xFE, 0xFF, 0xFF, 0xFF,
-  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF
-}; //screenMap
-
+uint8_t Display::screenMap[display_width * display_height / 8];
 
 //------------------------------------------------------------------------------
-
+/*
 // Display test
 static void TestPage()
 {
@@ -628,18 +613,24 @@ static void TestPage()
 
   vTaskDelay(2000);
 }
+*/
 
 //------------------------------------------------------------------------------
 
 // LCD test
 static void StartPage()
 {
-  //Display::Clear(Display::white);
-  //Display::Rect(0, 0, Display::Width()-1, y_ofs - 1, 1, Display::black);
+  Display::Clear(Display::black);
+  Display::Rect(0, 0, Display::Width(), Display::LineHeight(), true, Display::white);
   //              "----------------"
-  Display::String("OGN Tracker v0.1", Display::Width()-1, 1, Display::white, Display::align_center);
-  Display::Update();
-  vTaskDelay(2000);
+  Display::String("OGN Tracker v0.1", 0, 0, Display::black, Display::align_center);
+  for (int r=0; r<16; r++)
+  {
+    Display::Circle(Display::Width()/2, (Display::Height()+Display::LineHeight())/2, r, 1, Display::white);
+    Display::Update();
+    vTaskDelay(40);
+  }
+  vTaskDelay(1000);
 }
 
 //------------------------------------------------------------------------------
@@ -689,29 +680,29 @@ static void NavigPage()
       break;
   }
 
+  text = buf;
   if (gps.isTimeValid())
   {
-    text = buf;
     text += Format_UnsDec(text, gps.Hour, 2);
     *text++ = ':';
     text += Format_UnsDec(text, gps.Min, 2);
     *text++ = ':';
     text += Format_UnsDec(text, gps.Sec, 2);
-    *text = '\0';
-    Display::String(buf, Display::Width() - 1, 0, Display::black, Display::align_right);
   }
   else
-    Display::String("--:--:--", Display::Width() - 1, 0, Display::black, Display::align_right);
+    text += Format_String(text, "--:--:--");
+  *text = '\0';
+  Display::String(buf, Display::Width() - 1, 0, Display::black, Display::align_right);
 
   Display::SetFont(font_7x15);
 
   y = 8;
   text = buf;
-  text += Format_String(text, "alt ");
   if (gps.Altitude >= 0)
     text += Format_UnsDec(text, gps.Altitude / 10);
   else
-    text += Format_String(text, "?", 4);
+    text += Format_String(text, "?");
+  //~ text += Format_String(text, CS_HALFSP "m");
   text += Format_String(text, " m");
   *text = '\0';
   // display at center, but maintain digit and unit posistion when order changes
@@ -725,6 +716,7 @@ static void NavigPage()
     text += Format_UnsDec(text, gps.Speed / 10);
   else
     text += Format_String(text, "?");
+  //~ text += Format_String(text, CS_HALFSP "kn");
   text += Format_String(text, "kn");
   *text = '\0';
   Display::String(buf, 5*Display::LetterWidth() - Display::LetterSpace() - 1, y, Display::black, Display::align_right);
@@ -734,7 +726,7 @@ static void NavigPage()
     text += Format_UnsDec(text, gps.Heading / 10);
   else
     text += Format_String(text, "?");
-  text += Format_String(text, "n");
+  text += Format_String(text, "s");
   *text = '\0';
   Display::String(buf, Display::Width()-1, y, Display::black, Display::align_right);
 
@@ -764,11 +756,48 @@ static void RxStatsPage()
 
   Display::Clear(Display::white);
 
+  const OgnPosition& gps = GetGPSStatus();
+
+  if (gps.isDateValid())
+  {
+    text = buf;
+    text += Format_UnsDec(text, gps.Day);
+    *text++ = '.';
+    text += Format_UnsDec(text, gps.Month);
+    *text++ = '.';
+    *text = '\0';
+    Display::String(buf, 0, y);
+  }
+  else
+    Display::String("-.-.", 0, y);
+
   text = buf;
+  if (gps.isTimeValid())
+  {
+    text += Format_UnsDec(text, gps.Hour, 2);
+    *text++ = ':';
+    text += Format_UnsDec(text, gps.Min, 2);
+    *text++ = ':';
+    text += Format_UnsDec(text, gps.Sec, 2);
+  }
+  else
+    text += Format_String(text, "--:--:--");
+  *text = '\0';
+  Display::String(buf, Display::Width() - 1, y, Display::black, Display::align_right);
+  y += Display::LineHeight() + 2;
+
+  Display::SetFont(font_5x7);
+
+  text = buf;
+  text += Format_String(text, "id:");
+  text += Format_String(text, GetAcftTypeShort(Parameters.getAcftType()));
+  *text++ = ' ';
   text += Format_Hex(text, Parameters.getAddress(), 6);
   *text = '\0';
-  Display::String(buf, 0, y);
-  y += Display::LineHeight() + 4;
+  Display::String(buf, 0, y, Display::black, Display::align_center);
+  y += Display::LineHeight() + 2;
+
+  Display::SetFont(font_4x6);
 
   const RFStatus& rf = GetRFStatus();
 
@@ -795,7 +824,6 @@ static void RxStatsPage()
   Display::String(buf, 0, y);
   y += Display::LineHeight();
 
-  const OgnPosition& gps = GetGPSStatus();
   text = buf;
   text += Format_String(text, "fix=");
   text += Format_UnsDec(text, gps.FixMode);
@@ -806,30 +834,6 @@ static void RxStatsPage()
   }
   *text = '\0';
   Display::String(buf, 0, y);
-  y += Display::LineHeight();
-
-  if (gps.isDateValid())
-  {
-    text = buf;
-    text += Format_UnsDec(text, gps.Day);
-    *text++ = '.';
-    text += Format_UnsDec(text, gps.Month);
-    *text++ = '.';
-    *text = '\0';
-    Display::String(buf, 0, y);
-  }
-
-  if (gps.isTimeValid())
-  {
-    text = buf;
-    text += Format_UnsDec(text, gps.Hour, 2);
-    *text++ = ':';
-    text += Format_UnsDec(text, gps.Min, 2);
-    *text++ = ':';
-    text += Format_UnsDec(text, gps.Sec, 2);
-    *text = '\0';
-    Display::String(buf, Display::Width() - 1, y, Display::black, Display::align_right);
-  }
   y += Display::LineHeight();
 
   Display::Update();
@@ -845,18 +849,24 @@ bool DisplProcBtn(Buttons btn)
 {
   switch (btn)
   {
-    case btn_up:
-    case btn_down:
-      if (activePage == displ_rxstats)
-        activePage = displ_navig;
-      else
-        activePage = displ_rxstats;
-      return true;
+    case btn_set:
+    //case btn_up:
+    //case btn_down:
+      {
+      int idx = activePage;
+      activePage = (DisplayPage) ++idx;
+      break;
+      }
 
     default:
-    case btn_set:
+    //case btn_set:
       return false;
   }
+  if (activePage > displ_rxstats)
+    activePage = displ_start;
+  if (activePage < displ_start)
+    activePage = displ_rxstats;
+  return true;
 }
 #endif
 
@@ -875,15 +885,23 @@ void vTaskLcd(void* pvParameters)
   StartPage();
   //TestPage();
 
+  uint8_t counter = 0;
+  DisplayPage lastPage = activePage;
   while (true)
   {
-    switch (activePage)
+    // speeding up page change after button press
+    if (counter++ % 3 == 0 || lastPage != activePage)
     {
-      default:
-      case displ_navig:   NavigPage();   break;
-      case displ_rxstats: RxStatsPage(); break;
+      lastPage = activePage;
+      switch (activePage)
+      {
+        case displ_start:   StartPage();   break;
+        case displ_rxstats: RxStatsPage(); break;
+        default:
+        case displ_navig:   NavigPage();   break;
+      }
     }
-    vTaskDelay(1000);
+    vTaskDelay(250);
   }
 
   Display::Clear(Display::white);

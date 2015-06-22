@@ -11,7 +11,8 @@
 
 
 #ifdef WITH_BUTTONS
-  enum Buttons {
+  enum Buttons
+  {
     btn_up,
     btn_down,
     btn_set,
