@@ -6,6 +6,7 @@
 
 #include "stm32f10x_flash.h"
 
+#include "ogn.h"
 #include "format.h"
 
 // Parameters stored in Flash
@@ -22,7 +23,7 @@ class FlashParameters
 
    uint32_t getAddress(void) const { return AcftID&0x00FFFFFF; }
    uint8_t getAddrType(void) const { return (AcftID>>24)&0x03; }
-   uint8_t getAcftType(void) const { return (AcftID>>26)&0x0F; }
+   AcftType getAcftType(void) const { return (AcftType) ((AcftID>>26)&0x0F); }
    uint8_t getNoTrack (void) const { return (AcftID>>30)&0x01; }
    uint8_t getStealth (void) const { return (AcftID>>31)&0x01; }
 
@@ -45,7 +46,7 @@ class FlashParameters
 
  public:
   void setDefault(void)
-  { AcftID = UniqueID[0] ^ UniqueID[1] ^ UniqueID[2]; 
+  { AcftID = UniqueID[0] ^ UniqueID[1] ^ UniqueID[2];
     AcftID = 0x07000000 | (AcftID&0x00FFFFFF);
     RFchipFreqCorr =         0; // [61Hz]
     // RFchipTxPower  =        13; // [dBm] for RFM69W

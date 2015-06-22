@@ -93,14 +93,16 @@ static LDPC_Decoder Decoder;     // error corrector for the Gallager code
 static uint8_t TX_FreqChan=0;     // 0 = 868.2MHz, 1 = 868.4MHz
 static uint8_t TX_Credit  =0;     // counts transmitted packets vs. time to avoid using more than 1% of the time
 
-static uint8_t RX_Packets=0;      // [packets] counts received packets
-static uint8_t RX_Idle   =0;      // [sec]     time the receiver did not get any packets
-static int32_t RX_RssiLow=0;      // [-0.5dBm] background noise level on two frequencies
-static int32_t RX_RssiUpp=0;      // [-0.5dBm]
+static RFStatus rfStatus;        //
 
       uint32_t RX_Random=0x12345678; // Random number from LSB of RSSI readouts
 
 static char Line[88];
+
+const RFStatus& GetRFStatus()
+{
+  return rfStatus;
+}
 
 static uint8_t Receive(void)                                   // see if a packet has arrived
 { if(!TRX.DIO0_isOn()) return 0;
@@ -114,7 +116,7 @@ static uint8_t Receive(void)                                   // see if a packe
   RxPacket.RxRSSI=RxRSSI;
 
   TRX.ReadPacket(RxPktData, RxPktErr);                       // get the packet data from the FIFO
-  RX_Packets++;
+  rfStatus.RX_Packets++;
   uint8_t Check=LDPC_Check(RxPktData);
 
   // taskYIELD();
@@ -245,9 +247,9 @@ void vTaskRF(void* pvParameters)
   UART1_Write('\r'); UART1_Write('\n');
   xSemaphoreGive(UART1_Mutex);
 
-  TX_Credit =  0;
-  RX_Packets = 0;    // count received packets per every second (two time slots)
-  RX_Idle    = 0;    // count receiver idle time (slots without any packets received)
+  TX_Credit           =  0;
+  rfStatus.RX_Packets = 0;    // count received packets per every second (two time slots)
+  rfStatus.RX_Idle    = 0;    // count receiver idle time (slots without any packets received)
 
   TX_FreqChan=0; TRX.WriteFreq(LowFreq+Parameters.RFchipFreqCorr);
   TRX.WriteSYNC(7, 7, OGN_SYNC); TRX.WriteMode(RFM69_OPMODE_RX);
@@ -268,14 +270,14 @@ void vTaskRF(void* pvParameters)
       RX_Random = (RX_Random<<1) | (RxRSSI&1);
       RxRssiSum+=RxRSSI; RxRssiCount++;
     } while(PPS_Phase()<300);
-    RX_RssiLow = RxRssiSum/RxRssiCount; // [-0.5dBm]
+    rfStatus.RX_RssiLow = RxRssiSum/RxRssiCount; // [-0.5dBm]
 
     TRX.WriteMode(RFM69_OPMODE_STDBY);                               // switch to standy
     vTaskDelay(1);
 
-    if(RX_Idle>=60)                                                    // if no reception within one minute
+    if(rfStatus.RX_Idle>=60)                                                    // if no reception within one minute
     { StartRFchip();                                                   // reset and rewrite the RF chip config
-      RX_Idle=0; }
+      rfStatus.RX_Idle=0; }
                                                                         // here we can read the chip temperature
     TX_FreqChan=1; TRX.WriteFreq(UppFreq+Parameters.RFchipFreqCorr);    // switch to upper frequency
     TX_Credit++; if(!TX_Credit) TX_Credit--;                            // new half-slot => increment the transmission credit
@@ -297,7 +299,7 @@ void vTaskRF(void* pvParameters)
       RX_Random = (RX_Random<<1) | (RxRSSI&1);                 // take lower bit for random number generator
       RxRssiSum+=RxRSSI; RxRssiCount++;
     } while(PPS_Phase()<400);                                  // keep going until 400 ms after PPS
-    RX_RssiUpp = RxRssiSum/RxRssiCount;                        // average RSSI [-0.5dBm]
+    rfStatus.RX_RssiUpp = RxRssiSum/RxRssiCount;                        // average RSSI [-0.5dBm]
 
     // uint16_t MCU_Temp = ADC1_Read(ADC_Channel_TempSensor);
     // uint16_t MCU_Vref = ADC1_Read(ADC_Channel_Vrefint);
@@ -305,11 +307,11 @@ void vTaskRF(void* pvParameters)
     { uint8_t Len=0;
       // memcpy(Line+Len, "$POGNR,", 7); Len+=7;                               // prepare NMEA of status report
       Len+=Format_String(Line+Len, "$POGNR,");
-      Len+=Format_UnsDec(Line+Len, RX_Packets);                             // number of packets received
+      Len+=Format_UnsDec(Line+Len, rfStatus.RX_Packets);                       // number of packets received
       Line[Len++]=',';
-      Len+=Format_SignDec(Line+Len, -(RX_RssiLow/2));                       // average RF level on the lower frequency
+      Len+=Format_SignDec(Line+Len, -(rfStatus.RX_RssiLow/2));                 // average RF level on the lower frequency
       Line[Len++]=',';
-      Len+=Format_SignDec(Line+Len, -(RX_RssiUpp/2));                       // average RF level on the upper frequency
+      Len+=Format_SignDec(Line+Len, -(rfStatus.RX_RssiUpp/2));                       // average RF level on the upper frequency
       Line[Len++]=',';
       Len+=Format_SignDec(Line+Len, (int16_t)ChipTemp);
       Line[Len++]=',';
@@ -323,14 +325,14 @@ void vTaskRF(void* pvParameters)
       xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
       Format_String(UART1_Write, Line, Len);                                 // send the NMEA out to the console
       xSemaphoreGive(UART1_Mutex);
-      if(RX_Packets) RX_Idle=0;
-               else  RX_Idle++;
-      RX_Packets=0;                                                          // clear th ereceived packet count
+      if(rfStatus.RX_Packets) rfStatus.RX_Idle=0;
+               else  rfStatus.RX_Idle++;
+      rfStatus.RX_Packets=0;                                                          // clear th ereceived packet count
     }
 
     Receive(TxTimeUpp);                                                      // keep receiving until the transmit time
     if(TX_Credit)
-      TX_Credit-=Transmit(PacketPtr, RX_RssiUpp, 8);                         // attempt to transmit the packet
+      TX_Credit-=Transmit(PacketPtr, rfStatus.RX_RssiUpp, 8);                         // attempt to transmit the packet
     Receive(390-TxTimeUpp);                                                  // receive till the end of the time slot
 
     TX_FreqChan=0; TRX.WriteFreq(LowFreq+Parameters.RFchipFreqCorr);         // switch to lower frequency
@@ -339,7 +341,7 @@ void vTaskRF(void* pvParameters)
 
     Receive(TxTimeLow);                                                      // receive until transmit time comes
     if(TX_Credit)
-      TX_Credit-=Transmit(PacketPtr, RX_RssiLow, 8);                         // attempt to transmit the packet
+      TX_Credit-=Transmit(PacketPtr, rfStatus.RX_RssiLow, 8);                // attempt to transmit the packet
     Receive(390-TxTimeLow);                                                  // receive till the end of the time-slot
 
   }

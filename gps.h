@@ -4,6 +4,8 @@
 #include <semphr.h>
 #include <queue.h>
 
+#include "ogn.h"
+
 #include "uart1.h"
 #include "i2c.h"
 
@@ -18,6 +20,8 @@ extern TickType_t PPS_TickCount;   // [ms] time since the most recent rising edg
 uint16_t PPS_Phase(void);          // [ms]
 
 extern xQueueHandle xQueuePacket;
+
+const OgnPosition& GetGPSStatus();
 
 void GPS_Configuration (void);
 
