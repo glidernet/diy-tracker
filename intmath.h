@@ -18,6 +18,10 @@ int32_t IntSine(uint16_t Angle);
 // max. result error is about 2.3e-7
 int32_t IntSine(uint32_t Angle);
 
+// atan2(Y, X)
+// max. result error is 1/6 degree
+int16_t IntAtan2(int16_t Y, int16_t X);
+
 // integer square root
 uint32_t IntSqrt(uint32_t Inp);
 

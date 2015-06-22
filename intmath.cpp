@@ -58,6 +58,54 @@ int32_t IntSine(uint32_t Angle)
   return Value; }
 
 
+/*
+int16_t IntAtan2(int16_t Y, int16_t X)
+{ uint16_t Angle=0;                                             // printf(" [%+5d,%+5d] %04X\n", X, Y, Angle);
+  if(Y<0)     { Angle+=0x8000; X=(-X); Y=(-Y); }                // printf(" [%+5d,%+5d] %04X\n", X, Y, Angle);
+  if(X<0)     { Angle+=0x4000; int16_t tmp=Y; Y=(-X); X=tmp;  } // printf(" [%+5d,%+5d] %04X\n", X, Y, Angle);
+  if(X<Y)     { Angle+=0x4000; int16_t tmp=Y; Y=(-X); X=tmp;  } // printf(" [%+5d,%+5d] %04X\n", X, Y, Angle);
+  if(X==0) return 0;
+  int16_t D = (((int32_t)Y<<14) + (X>>1))/ X;
+  int16_t DD = ((int32_t)D*(int32_t)D)>>14;
+  int16_t DDD = ((int32_t)DD*(int32_t)D)>>14;
+  // printf(" %08X %08X %08X\n", D, DD, DDD);
+  Angle += ((5*D)>>3) - (DDD>>3); return Angle; } // good to about 1/2 degree
+*/
+
+int16_t IntAtan2(int16_t Y, int16_t X)
+{ uint16_t Angle=0;                                             // printf(" [%+5d,%+5d] %04X\n", X, Y, Angle);
+  const int32_t CosPi8 = 30274; // cos(PI/8)*32768
+  const int32_t SinPi8 = 12540; // sin(PI/8)*32768
+  if(Y<0)     { Angle+=0x8000; X=(-X); Y=(-Y); }                // printf(" [%+5d,%+5d] %04X\n", X, Y, Angle);
+  if(X<0)     { Angle+=0x4000; int16_t tmp=Y; Y=(-X); X=tmp;  } // printf(" [%+5d,%+5d] %04X\n", X, Y, Angle);
+  if(X<Y)     { Angle+=0x4000; int16_t tmp=Y; Y=(-X); X=tmp;  } // printf(" [%+5d,%+5d] %04X\n", X, Y, Angle);
+  if(X==0) return 0;
+  int16_t Yc = (Y<<1)+(Y>>1);
+  if(Y<0)
+  { if(X<(-Yc))
+    { int32_t NewX =    CosPi8*X - SinPi8*Y;
+      int32_t NewY =    SinPi8*X + CosPi8*Y;
+      X=NewX>>15; if(NewX&0x4000) X+=1;
+      Y=NewY>>15; if(NewY&0x4000) Y+=1;
+      Angle-=0x1000; }
+  } else // Y>=0
+  { if(X<Yc)
+    { int32_t NewX =    CosPi8*X + SinPi8*Y;
+      int32_t NewY =  - SinPi8*X + CosPi8*Y;
+      X=NewX>>15; if(NewX&0x4000) X+=1;
+      Y=NewY>>15; if(NewY&0x4000) Y+=1;
+      Angle+=0x1000; }
+  }                                                             // printf(" [%+5d,%+5d] %04X\n", X, Y, Angle);
+  int16_t D = (((int32_t)Y<<14) + (X>>1))/ X;
+  // int16_t D = ((int32_t)Y<<14) / X;
+  int16_t DD = ((int32_t)D*(int32_t)D)>>14;
+  int16_t DDD = ((int32_t)DD*(int32_t)D)>>14;
+  // printf(" %08X %08X %08X\n", D, DD, DDD);
+  Angle += ((5*D)>>3) - (DDD>>3);
+  return Angle; } // good to about 1/6 degree
+
+
+
 // integer square root
 uint32_t IntSqrt(uint32_t Inp)
 { uint32_t Out  = 0;
