@@ -1,3 +1,6 @@
+#ifndef __PARAMETERS_H__
+#define __PARAMETERS_H__
+
 #include "flashsize.h"
 #include "uniqueid.h"
 
@@ -105,4 +108,5 @@ class FlashParameters
 
 } ;
 
+#endif // __PARAMETERS_H__
 

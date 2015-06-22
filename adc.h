@@ -1,3 +1,5 @@
+#include <stdint.h>
+
 #include "stm32f10x_adc.h"
 
 void ADC_Configuration(void);

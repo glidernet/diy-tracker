@@ -1,6 +1,8 @@
 #include "adc.h"
 
 #include "stm32f10x_rcc.h"
+#include "stm32f10x_adc.h"
+#include "stm32f10x_gpio.h"
 
 void ADC_Configuration(void)
 {
@@ -23,6 +25,12 @@ void ADC_Configuration(void)
   ADC_StartCalibration(ADC1);                                           // Start ADC1 calibaration
   while(ADC_GetCalibrationStatus(ADC1));                                // Check the end of ADC1 calibration
   ADC_TempSensorVrefintCmd(ENABLE);                                     // enable Vrefint and Temperature sensor
+
+  GPIO_InitTypeDef  GPIO_InitStructure;
+  GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_0;                           // Pin #0
+  GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_AIN;                        // as analog input
+  GPIO_Init(GPIOB, &GPIO_InitStructure);                                // for Port B
+
 }
 
 uint16_t ADC1_Read(uint8_t Channel)                                     // convert and read given channel

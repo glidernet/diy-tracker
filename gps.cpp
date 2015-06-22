@@ -16,6 +16,7 @@
 
 #include "gps.h"
 #include "ctrl.h"
+#include "knob.h"
 
 // ----------------------------------------------------------------------------
 
@@ -89,20 +90,22 @@ static void GPS_PPS_Off(void)                       // called on falling edge of
 static void GPS_LockStart(void)                     // called when GPS catches a lock
 {
 #ifdef WITH_BEEPER
-  Play(0x50, 100);
-  Play(0x10, 100);
-  Play(0x52, 100);
-  Play(0x12, 100);
+  if(KNOB_Tick)
+  { Play(0x50, 100);
+    Play(0x10, 100);
+    Play(0x52, 100);
+    Play(0x12, 100); }
 #endif
 }
 
 static void GPS_LockEnd(void)                       // called when GPS looses a lock
 {
 #ifdef WITH_BEEPER
-  Play(0x52, 100);
-  Play(0x12, 100);
-  Play(0x50, 100);
-  Play(0x10, 100);
+  if(KNOB_Tick)
+  { Play(0x52, 100);
+    Play(0x12, 100);
+    Play(0x50, 100);
+    Play(0x10, 100); }
 #endif
 }
 

@@ -12,6 +12,7 @@
 #include "rf.h"                            // RF (this) task
 #include "ctrl.h"                          // CTRL task
 #include "gps.h"                           // GPS task
+#include "knob.h"
 
 #include "rfm69.h"                         // RFM69(H)W RF chip
 
@@ -20,7 +21,7 @@
 #include "bitcount.h"
 
 #include "uart1.h"                         // console UART
-#include "adc.h"
+// #include "adc.h"
 
 #include "ogn.h"                           // OGN packet
 
@@ -106,7 +107,7 @@ static uint8_t Receive(void)                                   // see if a packe
 
 #ifdef WITH_BEEPER
                                                                // if a new packet has been received
-  Play(0x69, 3);
+  if(KNOB_Tick) Play(0x69, 3);
 #endif
 
   uint8_t RxRSSI = TRX.ReadRSSI();                           // signal strength for the received packet
@@ -298,8 +299,8 @@ void vTaskRF(void* pvParameters)
     } while(PPS_Phase()<400);                                  // keep going until 400 ms after PPS
     RX_RssiUpp = RxRssiSum/RxRssiCount;                        // average RSSI [-0.5dBm]
 
-    uint16_t MCU_Temp = ADC1_Read(ADC_Channel_TempSensor);
-    uint16_t MCU_Vref = ADC1_Read(ADC_Channel_Vrefint);
+    // uint16_t MCU_Temp = ADC1_Read(ADC_Channel_TempSensor);
+    // uint16_t MCU_Vref = ADC1_Read(ADC_Channel_Vrefint);
 
     { uint8_t Len=0;
       // memcpy(Line+Len, "$POGNR,", 7); Len+=7;                               // prepare NMEA of status report
@@ -312,10 +313,10 @@ void vTaskRF(void* pvParameters)
       Line[Len++]=',';
       Len+=Format_SignDec(Line+Len, (int16_t)ChipTemp);
       Line[Len++]=',';
-      Len+=Format_UnsDec(Line+Len, MCU_Temp);
-      Line[Len++]=',';
-      Len+=Format_UnsDec(Line+Len, MCU_Vref);
-      Line[Len++]=',';
+      // Len+=Format_UnsDec(Line+Len, MCU_Temp);
+      // Line[Len++]=',';
+      // Len+=Format_UnsDec(Line+Len, MCU_Vref);
+      // Line[Len++]=',';
       Len+=Format_UnsDec(Line+Len, (uint16_t)TX_Credit);
       Len+=NMEA_AppendCheckCRNL(Line, Len);                                 // append NMEA check-sum and CR+NL
       LogLine(Line);

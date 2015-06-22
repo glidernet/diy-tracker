@@ -61,7 +61,7 @@ void Beep_Note(uint8_t Note) // Note = VVOONNNN: VV = Volume, OO=Octave, NNNN=No
 { uint8_t Volume =  Note>>6;
   uint8_t Octave = (Note>>4)&0x03;
   Note &= 0x0F; if(Note>=12) { Note-=12; Octave+=1; }
-  uint8_t Duty = 0; if(Volume) { Duty=0x10; Duty<<=Volume; }
+  uint8_t Duty = 0; if(Volume) { Duty=0x10; Duty<<=Volume; } // Duty = 0x00, 0x20, 0x40, 0x80
   uint16_t Period = NotePeriod[Note];
   if(Octave) { Period += 1<<(Octave-1); Period >>= Octave; }
   Beep(Period, Duty); }

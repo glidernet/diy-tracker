@@ -1,3 +1,5 @@
+#include "parameters.h"
+
 extern FlashParameters Parameters;
 
 extern uint8_t  Vario_Note;

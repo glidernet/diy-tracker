@@ -9,10 +9,11 @@
 #include "main.h"
 #include "ctrl.h"
 #include "gps.h"
+#include "knob.h"
 
 #include "i2c.h"
 
-#ifdef WITH_BMP
+#ifdef WITH_BMP180
 
 #include "bmp180.h"
 #include "atmosphere.h"
@@ -20,24 +21,24 @@
 #include "lowpass2.h"
 #include "intmath.h"
 
-
-static const uint8_t  VarioVolume     =    2; // [0..3]
+// static const uint8_t  VarioVolume     =    2; // [0..3]
 static const uint16_t VarioBasePeriod = 800;  // [ms]
 
 #ifdef WITH_BEEPER
 void VarioSound(int32_t ClimbRate)
 {
+  uint8_t VarioVolume = KNOB_Tick>>1; if(VarioVolume>3) VarioVolume=3;     // take vario volume from the user knob
   if(ClimbRate>=50)                                                     // if climb > 1/2 m/s
   { uint8_t Note=(ClimbRate-50)/50;                                     // one semitone per 1/2 m/s
     if(Note>=0x0F) Note=0x0F;                                           // stop at 15 thus 8 m/s
     uint16_t Period=(VarioBasePeriod+(Note>>1))/(1+Note);               // beeping period
     Vario_Period=Period; Vario_Fill=Period>>1;                          // period shorter (faster beeping) with stronger climb
-    Vario_Note = (VarioVolume<<6) | (0x50+Note); }                      // note to play: higher for stronger climb
+    Vario_Note = (VarioVolume<<6) | (0x10+Note); }                      // note to play: higher for stronger climb
   else if(ClimbRate<=(-100))                                            // if sink > 1 m/s
   { uint8_t Note=(-ClimbRate-100)/100;                                  // one semitone per 1 m/s
     if(Note>=0x0B) Note=0x0B;                                           //
     Vario_Period=VarioBasePeriod; Vario_Fill=VarioBasePeriod;           // continues tone
-    Vario_Note = (VarioVolume<<6) | (0x4B-Note); }                      // note to play: lower for stronger sink
+    Vario_Note = (VarioVolume<<6) | (0x0B-Note); }                      // note to play: lower for stronger sink
   else                                                                  // if climb less than 1/2 m/s or sink less than 1 m/s
   { Vario_Note=0x00; }                                                  // no sound
 }
@@ -122,7 +123,6 @@ static void ProcBaro()
         int32_t Altitude=((AltAver.Out+2048)>>12)+AltDiff;               // [0.1 m]
 
         uint8_t Len=0;                                                   // start preparing the barometer NMEA sentence
-        // memcpy(Line+Len, "$POGNB,", 7); Len+=7;
         Len+=Format_String(Line+Len, "$POGNB,");
         Len+=Format_UnsDec(Line+Len, Time, 3, 1);                        // [sec] measurement time
         Line[Len++]=',';
@@ -152,8 +152,9 @@ static void ProcBaro()
 
 extern "C"
 void vTaskSENS(void* pvParameters)
-{
-#ifdef WITH_BMP
+{ vTaskDelay(10);
+
+#ifdef WITH_BMP180
   bool withBaro = InitBaro();
 #else
   bool withBaro = false;
@@ -167,7 +168,7 @@ void vTaskSENS(void* pvParameters)
 
   while(1)
   {
-#ifdef WITH_BMP
+#ifdef WITH_BMP180
     ProcBaro();
 #else
     vTaskDelay(1000);

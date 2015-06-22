@@ -39,10 +39,11 @@
 
 #include "parameters.h"              // Parameters in Flash
 
-#include "gps.h"                     // GPS task
-#include "rf.h"                      // RF chip and RF task
-#include "ctrl.h"                    // CTRL task
-#include "sens.h"                    // SENS task
+#include "gps.h"                     // GPS task:  read the GPS receiver
+#include "rf.h"                      // RF task:   transmit/received packets on radio
+#include "ctrl.h"                    // CTRL task: write log file to SD card
+#include "sens.h"                    // SENS task: read I2C sensors (baro for now)
+#include "knob.h"                    // KNOB task: read user knob
 
 FlashParameters Parameters; // parameters to be stored in Flash, on the last page
 
@@ -376,10 +377,18 @@ int main(void)
 
   // CTRL: UART1, Console, SD log
   xTaskCreate(vTaskCTRL,  "CTRL",   120, 0, tskIDLE_PRIORITY  , 0);
+
+#ifdef WITH_KNOB
+  // KNOB: read the knob (potentiometer wired to PB0)
+  xTaskCreate(vTaskKNOB,  "KNOB",    96, 0, tskIDLE_PRIORITY  , 0);
+#endif
+
   // GPS: GPS NMEA/PPS, packet encoding
   xTaskCreate(vTaskGPS,   "GPS",     96, 0, tskIDLE_PRIORITY+1, 0);
+
   // RF: RF chip, time slots, frequency switching, packet reception and error correction
   xTaskCreate(vTaskRF,    "RF",      96, 0, tskIDLE_PRIORITY+2, 0);
+
   // SENS: BMP180 pressure, correlate with GPS
   xTaskCreate(vTaskSENS,  "SENS",    96, 0, tskIDLE_PRIORITY+1, 0);
 

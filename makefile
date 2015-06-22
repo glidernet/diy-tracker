@@ -4,13 +4,17 @@
 TPATH = ../gcc-arm-none-eabi-4.9/bin
 TCHAIN = arm-none-eabi
 
+#-------------------------------------------------------------------------------
+
 # list of optional features to be compiled in:
 # i2c1 ... I2C-1 interface
 # sdcard ... SD card interface with FAT filesystem
-# bmp ... barometric pressure sensor (selects i2c1 too)
+# bmp180 ... barometric pressure bmp180 sensor (selects i2c1 too)
 # sdlog ... logging to sdcard (selects sdcard too)
 # beeper ... beeper (vario etc)
-WITH_OPTS = bmp beeper
+# knob ... user knob to set volume and options
+
+WITH_OPTS = bmp180 beeper
 
 MCU = STM32F103C8  # STM32F103C8 for no-name STM32F1 board, STM32F103CB for Maple mini
 
@@ -22,6 +26,7 @@ C_SRC += gps.cpp
 C_SRC += rf.cpp
 C_SRC += ctrl.cpp
 C_SRC += sens.cpp
+C_SRC += knob.cpp
 
 C_SRC += uart1.cpp
 C_SRC += uart2.cpp
@@ -56,11 +61,10 @@ C_SRC  += FreeRTOS_8.2.0/Source/portable/MemMang/heap_4.c
 WITH_OPTS ?=
 WITH_DEFS =
 
-ifneq ($(findstring bmp,$(WITH_OPTS)),)
-  WITH_DEFS += -DWITH_BMP
+ifneq ($(findstring bmp180,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_BMP180
   WITH_OPTS += i2c1
   C_SRC += atmosphere.cpp
-  # C_SRC += bmp180.cpp
   C_SRC += intmath.cpp
 endif
 
@@ -86,6 +90,9 @@ ifneq ($(findstring beeper,$(WITH_OPTS)),)
   C_SRC += beep.cpp
 endif
 
+ifneq ($(findstring knob,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_KNOB
+endif
 
 #-------------------------------------------------------------------------------
 
