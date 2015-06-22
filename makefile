@@ -10,7 +10,7 @@ TCHAIN = arm-none-eabi
 # bmp ... barometric pressure sensor (selects i2c1 too)
 # sdlog ... logging to sdcard (selects sdcard too)
 # beeper ... beeper (vario etc)
-WITH_OPTS = bmp sdlog beeper
+WITH_OPTS = bmp beeper
 
 MCU = STM32F103C8  # STM32F103C8 for no-name STM32F1 board, STM32F103CB for Maple mini
 
