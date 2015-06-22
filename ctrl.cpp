@@ -3,6 +3,8 @@
 #include "semphr.h"
 #include "queue.h"
 
+#include "stm32f10x_gpio.h"
+
 #include <string.h>
 
 #include "ctrl.h"
@@ -15,14 +17,48 @@
 #include "main.h"
 #include "gps.h"
 
+#ifdef WITH_LCD5110
+  #include "lcd5110.h"
+#endif
+
 #ifdef WITH_SDCARD
   #include "diskio.h"
   #include "ff.h"
 #endif
 
+//------------------------------------------------------------------------------
+#ifdef WITH_BUTTONS
+
+// button input handler
+template<uint16_t pin> struct ButtonInpA
+{
+  static void Init()
+  {
+    GPIO_InitTypeDef GPIO_InitStructure;
+    GPIO_InitStructure.GPIO_Pin  = pin;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU;
+    GPIO_Init(GPIOA, &GPIO_InitStructure);
+  }
+
+  // test for button press
+  static bool Test()
+  {
+    return false;
+  }
+};
+
+//------------------------------------------------------------------------------
+
+static ButtonInpA<GPIO_Pin_11> buttonUp;
+static ButtonInpA<GPIO_Pin_12> buttonDown;
+static ButtonInpA<GPIO_Pin_15> buttonSet;
+
+#endif
+//------------------------------------------------------------------------------
+
 uint32_t get_fattime(void) { return GPS_FatTime; } // for FatFS to have the correct time
 
-// ======================================================================================
+//------------------------------------------------------------------------------
 
 static char Line[64];
 
@@ -85,7 +121,12 @@ static void ProcessInput(void)
     { if(NMEA.isChecked()) ProcessNMEA();                     // and if CRC is good: interpret the NMEA
       NMEA.Clear(); }                                         // clear the NMEA processor for the next sentence
   }
+
+#if defined WITH_BUTTONS && defined WITH_LCD5110
+  if (buttonUp.Test())
+#endif
 }
+
 
 #ifdef WITH_SDLOG
 static   uint16_t  LogDate     =              0;                  // [days] date = UnixTime/86400
@@ -161,6 +202,12 @@ void ProcessLog(void)                                     // process the queue o
 extern "C"
 void vTaskCTRL(void* pvParameters)
 {
+#ifdef WITH_BUTTONS
+  buttonUp.Init();
+  buttonDown.Init();
+  buttonSet.Init();
+#endif
+
 #ifdef WITH_SDLOG
   LogQueue = xQueueCreate(8, sizeof(char *));
   LogErr=f_mount(&FatFs, "", 0);

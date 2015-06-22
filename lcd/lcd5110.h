@@ -24,6 +24,15 @@
 
 //------------------------------------------------------------------------------
 
+#include "ctrl.h"
+
+//------------------------------------------------------------------------------
+
+// Process button, return true if button has been accepted (otherwise pass
+// to other subsystem)
+// Called from ctrl thread!
+bool DisplProcBtn(Buttons btn);
+
 //------------------------------------------------------------------------------
 
 #ifdef __cplusplus
@@ -32,7 +41,7 @@
 
 //------------------------------------------------------------------------------
 
-void vTaskLcd(void* pvParameters);
+void vTaskDispl(void* pvParameters);
 
 //------------------------------------------------------------------------------
 

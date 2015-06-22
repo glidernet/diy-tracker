@@ -13,6 +13,7 @@ TCHAIN = arm-none-eabi
 # sdlog ... logging to sdcard (selects sdcard too)
 # beeper ... beeper (vario etc)
 # knob ... user knob to set volume and options
+# buttons ... controls buttons (for display menu e.g., sound volume etc.)
 # lcd5110 ... 84x48 LCD with PCD8544 controller (uses SPI2 CLK & MOSI)
 
 WITH_OPTS = bmp180 beeper
@@ -92,6 +93,10 @@ ifneq ($(findstring lcd5110,$(WITH_OPTS)),)
   INCDIR += -Ilcd
   C_SRC  += lcd/bmpfonts.cpp
   C_SRC  += lcd/lcd5110.cpp
+endif
+
+ifneq ($(findstring buttons,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_BUTTONS
 endif
 
 ifneq ($(findstring spi2,$(WITH_OPTS)),)
