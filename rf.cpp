@@ -13,9 +13,7 @@
 #include "ctrl.h"                          // CTRL task
 #include "gps.h"                           // GPS task
 
-#ifdef WITH_KNOB
-  #include "knob.h"
-#endif
+#include "knob.h"
 
 #include "rfm69.h"                         // RFM69(H)W RF chip
 

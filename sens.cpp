@@ -10,9 +10,7 @@
 #include "ctrl.h"
 #include "gps.h"
 
-#ifdef WITH_KNOB
-  #include "knob.h"
-#endif
+#include "knob.h"
 
 #include "i2c.h"
 

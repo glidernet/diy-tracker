@@ -30,6 +30,7 @@ C_SRC += gps.cpp
 C_SRC += rf.cpp
 C_SRC += ctrl.cpp
 C_SRC += sens.cpp
+C_SRC += knob.cpp
 
 C_SRC += uart1.cpp
 C_SRC += uart2.cpp
@@ -111,7 +112,6 @@ endif
 
 ifneq ($(findstring knob,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_KNOB
-  C_SRC += knob.cpp
 endif
 
 #-------------------------------------------------------------------------------
