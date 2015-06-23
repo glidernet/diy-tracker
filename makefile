@@ -24,11 +24,12 @@ MCU = STM32F103C8  # STM32F103C8 for no-name STM32F1 board, STM32F103CB for Mapl
 
 C_SRC += main.cpp
 
+C_SRC += iopins.cpp
+
 C_SRC += gps.cpp
 C_SRC += rf.cpp
 C_SRC += ctrl.cpp
 C_SRC += sens.cpp
-C_SRC += knob.cpp
 
 C_SRC += uart1.cpp
 C_SRC += uart2.cpp
@@ -110,6 +111,7 @@ endif
 
 ifneq ($(findstring knob,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_KNOB
+  C_SRC += knob.cpp
 endif
 
 #-------------------------------------------------------------------------------

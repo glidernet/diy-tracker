@@ -9,7 +9,10 @@
 #include "main.h"
 #include "ctrl.h"
 #include "gps.h"
-#include "knob.h"
+
+#ifdef WITH_KNOB
+  #include "knob.h"
+#endif
 
 #include "i2c.h"
 

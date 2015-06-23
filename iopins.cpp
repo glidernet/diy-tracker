@@ -1,6 +1,6 @@
 //------------------------------------------------------------------------------
 /*
-  84x48 LCD with PCD8544 controller.
+  IO pin configuration.
 
   Copyright (C) Richard Pecl 2015
 
@@ -19,31 +19,30 @@
 */
 //------------------------------------------------------------------------------
 
-#ifndef __LCD5110_H
-#define __LCD5110_H
+#include "stm32f10x_gpio.h"
+
+#include "iopins.h"
 
 //------------------------------------------------------------------------------
 
-#include "ctrl.h"
+
+// Initialize configurable IO pins.
+void InitPins()
+{
+  #ifdef WITH_BUTTONS
+    inButtonUp::Init(GPIO_Mode_IPU);
+    inButtonDown::Init(GPIO_Mode_IPU);
+    inButtonSet::Init(GPIO_Mode_IPU);
+  #endif
+
+  #ifdef WITH_LCD5110
+    //RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA | RCC_APB2Periph_GPIOB, ENABLE);
+    outDisplRST::Init(GPIO_Mode_Out_PP, GPIO_Speed_2MHz);
+    outDisplCE::Init(GPIO_Mode_Out_PP, GPIO_Speed_2MHz);
+    outDisplDC::Init(GPIO_Mode_Out_PP, GPIO_Speed_2MHz);
+    outDisplDIN::Init(GPIO_Mode_Out_PP, GPIO_Speed_2MHz);
+    outDisplCLK::Init(GPIO_Mode_Out_PP, GPIO_Speed_2MHz);
+  #endif
+}
 
 //------------------------------------------------------------------------------
-
-// Process control command.
-// Called from ctrl task!
-bool DisplProcCtrl(ControlCmd cmd);
-
-//------------------------------------------------------------------------------
-
-#ifdef __cplusplus
-  extern "C" {
-#endif
-
-//------------------------------------------------------------------------------
-
-void vTaskLcd(void* pvParameters);
-
-//------------------------------------------------------------------------------
-
-} // extern "C"
-
-#endif // __LCD5110_H

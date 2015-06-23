@@ -35,6 +35,7 @@
 #include "stm32f10x_rcc.h"
 //#include "stm32f10x_spi.h"
 
+#include "iopins.h"
 #include "bmpfonts.h"
 
 #include "format.h"
@@ -448,29 +449,11 @@ public:
   //This sends the magical commands to the PCD8544
   static void Init()
   {
-    //Configure control pins
-    GPIO_InitTypeDef  GPIO_InitStructure;
+    outDisplDC::SetHigh();
+    outDisplCLK::SetHigh();
+    outDisplDIN::SetHigh();
 
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA | RCC_APB2Periph_GPIOB, ENABLE);
-    //RCC_APB2PeriphClockCmd (RCC_APB2Periph_GPIOA | RCC_APB2Periph_GPIOB | RCC_APB2Periph_AFIO, ENABLE);
-    //RCC_APB1PeriphClockCmd(RCC_APB1Periph_SPI2 ,ENABLE);
-
-    GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_Out_PP;
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_2MHz;
-
-    GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_12 | GPIO_Pin_14;
-    GPIO_Init(GPIOB, &GPIO_InitStructure);
-
-    GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_8;
-    GPIO_Init(GPIOA, &GPIO_InitStructure);
-
-    GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_13 | GPIO_Pin_15;
-    GPIO_Init(GPIOB, &GPIO_InitStructure);
-
-    GPIO_SetBits(GPIOA, GPIO_Pin_8);
-    GPIO_SetBits(GPIOB, GPIO_Pin_13 | GPIO_Pin_15);
-
-    //Reset the device to a known state
+    // reset the device to a known state
     DevDeselect();
     DevReset();
 
@@ -519,36 +502,36 @@ protected:
 
   static void DevSelect()
   {
-    GPIO_ResetBits(GPIOB, GPIO_Pin_14);
+    outDisplCE::SetLow();
   }
 
   static void DevDeselect()
   {
-    GPIO_SetBits  (GPIOB, GPIO_Pin_14);
+    outDisplCE::SetHigh();
   }
 
   static void DevReset(void)
   {
-    GPIO_ResetBits(GPIOB, GPIO_Pin_12);
+    outDisplRST::SetLow();
     vTaskDelay(10);
-    GPIO_SetBits  (GPIOB, GPIO_Pin_12);
+    outDisplRST::SetHigh();
   }
 
   static void DevDataTx(uint8_t data)
   {
     for(char i=0; i < 8; i++)
     {
-      GPIO_WriteBit(GPIOB, GPIO_Pin_15, (data & 0x80) ? Bit_SET : Bit_RESET);
+      outDisplDIN::SetState(data & 0x80);
       data = data << 1;
-      GPIO_WriteBit(GPIOB, GPIO_Pin_13, Bit_RESET);
-      GPIO_WriteBit(GPIOB, GPIO_Pin_13, Bit_SET);
+      outDisplCLK::SetLow();
+      outDisplCLK::SetHigh();
     }
   }
 
   static void DevWrite(DevTxType txType, uint8_t data)
   {
     //Tell the LCD that we are writing either to data or a command
-    GPIO_WriteBit(GPIOA, GPIO_Pin_8, (txType == tx_data) ? Bit_SET : Bit_RESET);
+    outDisplDC::SetState(txType == tx_data);
 
     DevSelect();
     //SPI_I2S_SendData(SPI2, data);
@@ -841,17 +824,15 @@ static void RxStatsPage()
 
 //------------------------------------------------------------------------------
 
-#ifdef WITH_BUTTONS
-// Process button, return true if button has been accepted (otherwise pass
-// to other subsystem)
-// Called from ctrl thread!
-bool DisplProcBtn(Buttons btn)
+// Process control command.
+// Called from ctrl task!
+bool DisplProcCtrl(ControlCmd cmd)
 {
-  switch (btn)
+  switch (cmd)
   {
-    case btn_set:
-    //case btn_up:
-    //case btn_down:
+    case button_set:
+    //case button_up:
+    //case button_down:
       {
       int idx = activePage;
       activePage = (DisplayPage) ++idx;
@@ -859,7 +840,7 @@ bool DisplProcBtn(Buttons btn)
       }
 
     default:
-    //case btn_set:
+    //case button_set:
       return false;
   }
   if (activePage > displ_rxstats)
@@ -868,7 +849,6 @@ bool DisplProcBtn(Buttons btn)
     activePage = displ_rxstats;
   return true;
 }
-#endif
 
 //------------------------------------------------------------------------------
 

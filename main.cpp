@@ -19,20 +19,13 @@
 #include <semphr.h>
 #include <queue.h>
 
+#include "iopins.h"
 
 #include "fifo.h"
 
 #include "uart1.h"
 #include "uart2.h"
 #include "adc.h"
-
-#ifdef WITH_BEEPER
-  #include "beep.h"
-#endif
-
-#ifdef WITH_I2C1
-  #include "i2c.h"
-#endif
 
 #include "flashsize.h"
 #include "uniqueid.h"
@@ -43,7 +36,18 @@
 #include "rf.h"                      // RF task:   transmit/received packets on radio
 #include "ctrl.h"                    // CTRL task: write log file to SD card
 #include "sens.h"                    // SENS task: read I2C sensors (baro for now)
-#include "knob.h"                    // KNOB task: read user knob
+
+#ifdef WITH_BEEPER
+  #include "beep.h"
+#endif
+
+#ifdef WITH_I2C1
+  #include "i2c.h"
+#endif
+
+#ifdef WITH_KNOB
+  #include "knob.h"                  // KNOB task: read user knob
+#endif
 
 #ifdef WITH_LCD5110
   #include "lcd5110.h"
@@ -66,62 +70,61 @@ FlashParameters Parameters; // parameters to be stored in Flash, on the last pag
 
 // #include "adc.h"
 
-// ======================================================================================
 
 // ======================================================================================
-
+// DEFAULT pin-out (change in iopins.h)
 // ======================================================================================
 
 // Board pin-out: "no name" STM32F103C8T6, CPU chip facing up
-
-//                        ||       |           Common              |      SD card         |  LCD 5110   |     BUTTONS      |
-// -----------------------||-------|-------------------------------|----------------------|-------------|------------------|
-//                  Vbat  ||  3.3V |           -> LED, I2C pull-up |                      |             |                  |
-// LED <-           PC13  ||  GND  |           <- Li-Ion battery   |                      |             |                  |
-//           XTAL - PC14  ||  5.0V |           <- Li-Ion battery   |                      |             |                  |
-//           XTAL - PC15  ||  PB 9 | TIM4.CH4  -> Buzzer           |                      |             |                  |
-// ENA <- TIM2.CH1  PA 0  ||  PB 8 | TIM4.CH3  -> Buzzer           |                      |             |                  |
-// PPS -> TIM2.CH2  PA 1  ||  PB 7 | I2C1.SDA <-> Baro/Gyro/...    |                      |             |                  |
-// GPS <- USART2.Tx PA 2  ||  PB 6 | I2C1.SCL <-> Baro/Gyro/...    |                      |             |                  |
-// GPS -> USART2.Rx PA 3  ||  PB 5 |           -> RF.RESET         |                      |             |                  |
-// RF  <- SPI1.SS   PA 4  ||  PB 4 |           <- RF.DIO0          |                      |             |                  |
-// RF  <- SPI1.SCK  PA 5  ||  PB 3 |           <- RF.DIO4          |                      |             |                  |
-// RF  -> SPI1.MISO PA 6  ||  PA15 | ------------------------------|----------------------|-------------| D/I <- BTN SET   |
-// RF  <- SPI1.MOSI PA 7  ||  PA12 | TIM1.ETR                      |                      |             | D/I <- BTN DOWN  |
-// POT -> TIM3.CH3  PB 0  ||  PA11 | TIM1.CH4                      |                      |             | D/I <- BTN UP    |
-//        TIM3.CH4  PB 1  ||  PA10 | USART1.Rx <- Console/BT       |                      |             |                  |
-//     <- USART3.Tx PB10  ||  PA 9 | USART1.Tx -> Console/BT       |                      |             |                  |
-//     -> USART3.Rx PB11  ||  PA 8 | TIM1.CH1                      |                      | D/O -> D/C  |                  |
-//                 RESET  ||  PB15 |-------------------------------| SPI2.MOSI -> SD card | D/O -> DIN  |                  |
-// RF  <-           3.3V  ||  PB14 |                               | SPI2.MISO <- SD card | D/O -> CE   |                  |
-// RF  <-            GND  ||  PB13 |                               | SPI2.SCK  -> SD card | D/O -> SCLK |                  |
-//                   GND  ||  PB12 |                               | SPI2.SS   -> SD card | RST         |                  |
+//
+//                        ||       |           Common              |bmp180| beeper |      sdcard/sdlog    |  lcd5110    |     buttons     |
+// -----------------------||-------|-------------------------------|------|--------|----------------------|-------------|-----------------|
+//                  Vbat  ||  3.3V |           -> LED, I2C pull-up |      |        |                      |             |                 |
+// LED <-           PC13  ||  GND  |           <- Li-Ion battery   |      |        |                      |             |                 |
+//           XTAL - PC14  ||  5.0V |           <- Li-Ion battery   |      |        |                      |             |                 |
+//           XTAL - PC15  ||  PB 9 | TIM4.CH4----------------------|------| Buzzer |----------------------|-------------| D/I <- BTN SET  |
+// ENA <- TIM2.CH1  PA 0  ||  PB 8 | TIM4.CH3                      |      | Buzzer |                      |             | D/I <- BTN DOWN |
+// PPS -> TIM2.CH2  PA 1  ||  PB 7 | I2C1.SDA----------------------|Bmp180|--------|----------------------|-------------| D/I <- BTN UP   |
+// GPS <- USART2.Tx PA 2  ||  PB 6 | I2C1.SCL                      |Bmp180|        |                      |             |                 |
+// GPS -> USART2.Rx PA 3  ||  PB 5 |           -> RF.RESET         |      |        |                      |             |                 |
+// RF  <- SPI1.SS   PA 4  ||  PB 4 |           <- RF.DIO0          |      |        |                      |             |                 |
+// RF  <- SPI1.SCK  PA 5  ||  PB 3 |           <- RF.DIO4          |      |        |                      |             |                 |
+// RF  -> SPI1.MISO PA 6  ||  PA15 | ------------------------------|------|--------|----------------------|-------------|                 |
+// RF  <- SPI1.MOSI PA 7  ||  PA12 | USB D+   <-> USB              |      |        |                      |             |                 |
+// POT -> TIM3.CH3  PB 0  ||  PA11 | USB D-   <-> USB              |      |        |                      |             |                 |
+//        TIM3.CH4  PB 1  ||  PA10 | USART1.Rx <- Console/BT       |      |        |                      |             |                 |
+//     <- USART3.Tx PB10  ||  PA 9 | USART1.Tx -> Console/BT       |      |        |                      |             |                 |
+//     -> USART3.Rx PB11  ||  PA 8 | TIM1.CH1                      |      |        |                      | D/O -> D/C  |                 |
+//                 RESET  ||  PB15 |-------------------------------|------|--------| SPI2.MOSI -> SD card | D/O -> DIN  |                 |
+// RF  <-           3.3V  ||  PB14 |                               |      |        | SPI2.MISO <- SD card | D/O -> CE   |                 |
+// RF  <-            GND  ||  PB13 |                               |      |        | SPI2.SCK  -> SD card | D/O -> CLK  |                 |
+//                   GND  ||  PB12 |                               |      |        | SPI2.SS   -> SD card | D/O -> RST  |                 |
 
 
 // Board pin-out: Maple Mini: CPU chip facing up
-
-//                           ||           |           Common       |      SD card         |  LCD 5110   |     BUTTONS      |
-// --------------------------||-----------|------------------------|----------------------|-------------|------------------|
-//                  VCC      ||      VCC  |                        |                      |             |                  |
-//                  GND      ||      GND  |                        |                      |             |                  |
-//                  Vbat     ||      Vbat |                        |                      |             |                  |
-//          LED <-  PC13 14  ||  15  PB 7 | I2C1.SDA <-> Gyro/Baro |                      |             |                  |
-//          XTAL    PC14 13  ||  16  PB 6 | I2C1.SCL <-> Gyro/Baro |                      |             |                  |
-//          XTAL    PC15 12  ||  17  PB 5 |           -> RF.RESET  |                      |             |                  |
-//                 RESET     ||  18  PB 4 |           <- RF.DIO0   |                      |             |                  |
-//        TIM2.CH1  PA 0 11  ||  19  PB 3 |           <- RF.DIO4   |                      |             |                  |
-//        TIM2.CH2  PA 1 10  ||  20  PA15 |------------------------|----------------------|-------------| D/I <- BTN SET   |
-//        USART2.Rx PA 2  9  ||  21  PA14 | SWCLK                  |                      |             |                  |
-//        USART2.Tx PA 3  8  ||  22  PA13 | SWDIO                  |                      |             |                  |
-// RF  <- SPI1.SS   PA 4  7  ||  23  PA12 | TIM1.ETR               |                      |             | D/I <- BTN DOWN  |
-// RF  <- SPI1.SCK  PA 5  6  ||  24  PA11 | TIM1.CH4               |                      |             | D/I <- BTN UP    |
-// RF  -> SPI1.MISO PA 6  5  ||  25  PA10 | USART.Rx <- Console    |                      |             |                  |
-// RF  <- SPI1.MOSI PA 7  4  ||  26  PA 9 | USART.Tx -> Console    |                      |             |                  |
-//        TIM3.CH3  PB 0  3  ||  27  PA 8 | TIM1.CH1               |                      | D/O -> D/C  |                  |
-//        Boot1     PB 2  2  ||  28  PB15 |------------------------| SPI2.MOSI -> SD card | D/O -> DIN  |                  |
-// BT  <- USART3.Tx PB10  1  ||  29  PB14 |                        | SPI2.MISO <- SD card | D/O -> CE   |                  |
-// BT  -> USART3.Tx PB11  0  ||  30  PB13 |                        | SPI2.SCK  -> SD card | D/O -> SCLK |                  |
-//                  Vin      ||  31  PB12 |                        | SPI2.SS   -> SD card | RST         |                  |
+//
+//                           ||           |           Common       |bmp180|      sdcard/sdlog    |  lcd5110    |
+// --------------------------||-----------|------------------------|------|----------------------|-------------|
+//                  VCC      ||      VCC  |                        |      |                      |             |
+//                  GND      ||      GND  |                        |      |                      |             |
+//                  Vbat     ||      Vbat |                        |      |                      |             |
+//          LED <-  PC13 14  ||  15  PB 7 | I2C1.SDA <-> Gyro/Baro |Bmp180|                      |             |
+//          XTAL    PC14 13  ||  16  PB 6 | I2C1.SCL <-> Gyro/Baro |Bmp180|                      |             |
+//          XTAL    PC15 12  ||  17  PB 5 |           -> RF.RESET  |      |                      |             |
+//                 RESET     ||  18  PB 4 |           <- RF.DIO0   |      |                      |             |
+//        TIM2.CH1  PA 0 11  ||  19  PB 3 |           <- RF.DIO4   |      |                      |             |
+//        TIM2.CH2  PA 1 10  ||  20  PA15 |------------------------|------|----------------------|-------------|
+//        USART2.Rx PA 2  9  ||  21  PA14 | SWCLK                  |      |                      |             |
+//        USART2.Tx PA 3  8  ||  22  PA13 | SWDIO                  |      |                      |             |
+// RF  <- SPI1.SS   PA 4  7  ||  23  PA12 | USB D+   <-> USB       |      |                      |             |
+// RF  <- SPI1.SCK  PA 5  6  ||  24  PA11 | USB D-   <-> USB       |      |                      |             |
+// RF  -> SPI1.MISO PA 6  5  ||  25  PA10 | USART.Rx <- Console    |      |                      |             |
+// RF  <- SPI1.MOSI PA 7  4  ||  26  PA 9 | USART.Tx -> Console    |      |                      |             |
+//        TIM3.CH3  PB 0  3  ||  27  PA 8 | TIM1.CH1               |      |                      | D/O -> D/C  |
+//        Boot1     PB 2  2  ||  28  PB15 |------------------------|------| SPI2.MOSI -> SD card | D/O -> DIN  |
+// BT  <- USART3.Tx PB10  1  ||  29  PB14 |                        |      | SPI2.MISO <- SD card | D/O -> CE   |
+// BT  -> USART3.Tx PB11  0  ||  30  PB13 |                        |      | SPI2.SCK  -> SD card | D/O -> CLK  |
+//                  Vin      ||  31  PB12 |                        |      | SPI2.SS   -> SD card | D/O -> RST  |
 
 // PB 8 = push button => Boot0
 // PB 1 = PCB LED
@@ -362,6 +365,9 @@ void prvSetupHardware(void)
   IWDG_SetReload(100);                              // reload with 100 thus 20ms timeout ?
   IWDG_ReloadCounter();                             // reload timer = reset the watch-dog
   IWDG_Enable();                                    // enable RESET at timeout
+
+  // initialize configurable pins
+  InitPins();
 }
 
 extern "C"

@@ -12,7 +12,10 @@
 #include "rf.h"                            // RF (this) task
 #include "ctrl.h"                          // CTRL task
 #include "gps.h"                           // GPS task
-#include "knob.h"
+
+#ifdef WITH_KNOB
+  #include "knob.h"
+#endif
 
 #include "rfm69.h"                         // RFM69(H)W RF chip
 

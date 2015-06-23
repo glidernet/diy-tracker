@@ -9,16 +9,17 @@
 #include "task.h"
 #include "queue.h"
 
+//------------------------------------------------------------------------------
 
-#ifdef WITH_BUTTONS
-  enum Buttons
-  {
-    btn_up,
-    btn_down,
-    btn_set,
-  };
-#endif
+// various control commands
+enum ControlCmd
+{
+  button_up,
+  button_down,
+  button_set,
+};
 
+//------------------------------------------------------------------------------
 
 #ifdef WITH_SDLOG
 extern xQueueHandle LogQueue;

@@ -7,6 +7,8 @@
 
 #include <string.h>
 
+#include "iopins.h"
+
 #include "ctrl.h"
 
 #include "uart1.h"       // UART1 (console)
@@ -26,62 +28,6 @@
   #include "ff.h"
 #endif
 
-//------------------------------------------------------------------------------
-#ifdef WITH_BUTTONS
-
-// button input handler
-template<uint16_t pin> struct ButtonInpA
-{
-  enum Const
-  {
-    min_still_time = 70,
-  };
-
-  static void Init()
-  {
-    GPIO_InitTypeDef GPIO_InitStructure;
-    GPIO_InitStructure.GPIO_Pin  = pin;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU;
-    GPIO_Init(GPIOA, &GPIO_InitStructure);
-  }
-
-  // test for button press
-  static bool Test()
-  {
-    static bool lastSt   = false;
-    static bool reported = false;
-    static TickType_t lastTm = 0;
-
-    if (((GPIO_ReadInputDataBit(GPIOA, pin) == Bit_RESET)) != lastSt)
-    {
-      lastSt = !lastSt;
-      lastTm = xTaskGetTickCount();
-      reported = false;
-      //~ xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
-      //~ Format_UnsDec(UART1_Write, pin);
-      //~ if (lastSt)
-        //~ Format_String(UART1_Write, " XXXX on XXX\n");
-      //~ else
-        //~ Format_String(UART1_Write, " XXXX off XXX\n");
-      //~ xSemaphoreGive(UART1_Mutex);
-    }
-    else if (lastSt && (xTaskGetTickCount() - lastTm) >= min_still_time && !reported)
-    //else if (lastSt && !reported)
-    {
-      reported = true;
-      return true;
-    }
-    return false;
-  }
-};
-
-//------------------------------------------------------------------------------
-
-typedef ButtonInpA<GPIO_Pin_11> buttonUp;
-typedef ButtonInpA<GPIO_Pin_12> buttonDown;
-typedef ButtonInpA<GPIO_Pin_15> buttonSet;
-
-#endif
 //------------------------------------------------------------------------------
 
 uint32_t get_fattime(void) { return GPS_FatTime; } // for FatFS to have the correct time
@@ -132,14 +78,14 @@ static void ProcessCtrlC(void)                                  // print system 
 
 static NMEA_RxMsg NMEA;
 
-static void ReadParameters(void)  // read parameters requested by the user in the NMEA sent.
+static void ReadParameters()  // read parameters requested by the user in the NMEA sent.
 {
 }
 
-static void ProcessNMEA(void)     // process a valid NMEA that got to the console
+static void ProcessNMEA()     // process a valid NMEA that got to the console
 { }
 
-static void ProcessInput(void)
+static void ProcessInput()
 {
   for( ; ; )
   { uint8_t Byte; int Err=UART1_Read(Byte); if(Err<=0) break; // get byte from console, if none: exit the loop
@@ -149,14 +95,19 @@ static void ProcessInput(void)
     { if(NMEA.isChecked()) ProcessNMEA();                     // and if CRC is good: interpret the NMEA
       NMEA.Clear(); }                                         // clear the NMEA processor for the next sentence
   }
+}
 
+static void ProcessControls() // process miscellaneous controls input
+{
 #if defined WITH_BUTTONS && defined WITH_LCD5110
-  if (buttonUp::Test())
-    DisplProcBtn(btn_up);
-  if (buttonDown::Test())
-    DisplProcBtn(btn_down);
-  if (buttonSet::Test())
-    DisplProcBtn(btn_set);
+  if (inButtonUp::BtnPress())
+    DisplProcCtrl(button_up);
+
+  if (inButtonDown::BtnPress())
+    DisplProcCtrl(button_down);
+
+  if (inButtonSet::BtnPress())
+    DisplProcCtrl(button_set);
 #endif
 }
 
@@ -235,12 +186,6 @@ void ProcessLog(void)                                     // process the queue o
 extern "C"
 void vTaskCTRL(void* pvParameters)
 {
-#ifdef WITH_BUTTONS
-  buttonUp::Init();
-  buttonDown::Init();
-  buttonSet::Init();
-#endif
-
 #ifdef WITH_SDLOG
   LogQueue = xQueueCreate(8, sizeof(char *));
   LogErr=f_mount(&FatFs, "", 0);
@@ -266,13 +211,20 @@ void vTaskCTRL(void* pvParameters)
 
   NMEA.Clear();
 
+  uint8_t counter = 0;
   while(1)
   { vTaskDelay(1);
 
-    ProcessInput();                                             // process console input
+    ProcessInput();                                             // process console & button input
+
 #ifdef WITH_SDLOG
     ProcessLog();                                               // process lines to written to the log file
 #endif
+
+    // 16ms period is enough for controls
+    if ((counter & 0xF) == 0)
+      ProcessControls();
+
+    counter++;
   }
 }
-
