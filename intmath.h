@@ -25,4 +25,20 @@ int16_t IntAtan2(int16_t Y, int16_t X);
 // integer square root
 uint32_t IntSqrt(uint32_t Inp);
 
+// Distance = sqrt(dX*dX+dY*dY)
+template <class IntType>
+ IntType IntDistance(IntType dX, IntType dY) // after: http://www.flipcode.com/archives/Fast_Approximate_Distance_Functions.shtml
+ { IntType min, max, approx;
+
+   if(dX<0) dX = -dX;
+   if(dY<0) dY = -dY;
+
+   if(dX<dY) { min = dX; max = dY; }
+        else { min = dY; max = dX; }
+
+   approx = max*1007 + min*441;
+   if( max < (min<<4) ) approx -= max*40;
+
+   return (approx+512)>>10; }
+
 #endif // of __INTMATH_H__
