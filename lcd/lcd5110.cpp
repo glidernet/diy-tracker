@@ -309,19 +309,19 @@ public:
   // Count number of minimum pixels required by string.
   static int PixelWidth(const char* dString)
   {
-    int cnt = 0;
+    int w = 0;
     while (*dString != '\0')
     {
       if (*dString++ == CH_HALFSP)
-        cnt += font->width / 2 + letterSpace;
+        w += font->width / 2 + letterSpace;
       else
-        cnt += LetterWidth();
+        w += LetterWidth();
     }
     // don't count last letterspace
-    cnt -= letterSpace;
-    if (cnt < 0)
-      cnt = 0;
-    return cnt;
+    w -= letterSpace;
+    if (w < 0)
+      w = 0;
+    return w;
   }
 
   // String draws a string of characters, calling Char with
@@ -350,9 +350,10 @@ public:
       }
       else
       {
-        Char(*dString++, x, y, bw);
+        Char(*dString, x, y, bw);
         x += font->width;
       }
+      dString++;
 
       // inter-char space
       if ((x + letterSpace) <= Width())
@@ -620,7 +621,8 @@ static void StartPage()
 
 // Navigation info page (speed, altitude...)
 // GPS||||  00:00:00
-//  spd alt hdg
+//       alt
+// spd          hdg
 // gld CECECE
 static void NavigPage()
 {
@@ -631,7 +633,16 @@ static void NavigPage()
 
   Display::Clear(Display::white);
 
-  const OgnPosition& gps = GetGPSStatus();
+  #if 1
+    const OgnPosition& gps = GetGPSStatus();
+  #else
+    OgnPosition gps;
+    gps.FixMode = 3; gps.Satellites = 4;
+    gps.Hour = 22; gps.Min = 5; gps.Sec = 49;
+    gps.Altitude = 3875 * 10;
+    gps.Speed = 153 * 10;
+    gps.Heading = 249 * 10;
+  #endif
 
   // blink 'GPS' text until 3-d fix
   if (gps.FixMode >= 3 || (period & 1) == 0)
@@ -685,31 +696,29 @@ static void NavigPage()
     text += Format_UnsDec(text, gps.Altitude / 10);
   else
     text += Format_String(text, "?");
-  //~ text += Format_String(text, CS_HALFSP "m");
-  text += Format_String(text, " m");
+  text += Format_String(text, CS_HALFSP "m");
   *text = '\0';
   // display at center, but maintain digit and unit posistion when order changes
   Display::String(buf, (Display::Width()+5*Display::LetterWidth())/2, y, Display::black, Display::align_right);
 
   // "123456789"
-  // "123kn 360"
+  // "123k 360*"
   y += Display::Font().height;
   text = buf;
   if (gps.Speed >= 0)
     text += Format_UnsDec(text, gps.Speed / 10);
   else
     text += Format_String(text, "?");
-  //~ text += Format_String(text, CS_HALFSP "kn");
-  text += Format_String(text, "kn");
+  text += Format_String(text, CS_HALFSP "k");
   *text = '\0';
-  Display::String(buf, 5*Display::LetterWidth() - Display::LetterSpace() - 1, y, Display::black, Display::align_right);
+  Display::String(buf, 4*Display::LetterWidth() + Display::LetterWidth()/2 - Display::LetterSpace() - 1, y, Display::black, Display::align_right);
 
   text = buf;
   if (gps.Heading >= 0)
     text += Format_UnsDec(text, gps.Heading / 10);
   else
     text += Format_String(text, "?");
-  text += Format_String(text, "s");
+  text += Format_String(text, CS_DEGREE);
   *text = '\0';
   Display::String(buf, Display::Width()-1, y, Display::black, Display::align_right);
 
@@ -826,28 +835,26 @@ static void RxStatsPage()
 
 // Process control command.
 // Called from ctrl task!
-bool DisplProcCtrl(ControlCmd cmd)
+void DisplProcCtrl(ControlCmd cmd)
 {
+  int idx = activePage;
+
   switch (cmd)
   {
-    case button_set:
-    //case button_up:
-    //case button_down:
-      {
-      int idx = activePage;
-      activePage = (DisplayPage) ++idx;
-      break;
-      }
+    case button_up:   idx++; break;
+    case button_down: idx--; break;
 
     default:
-    //case button_set:
-      return false;
+    case button_set:
+      return;
   }
+
+  activePage = (DisplayPage) idx;
+
   if (activePage > displ_rxstats)
     activePage = displ_start;
   if (activePage < displ_start)
     activePage = displ_rxstats;
-  return true;
 }
 
 //------------------------------------------------------------------------------

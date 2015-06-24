@@ -30,7 +30,7 @@
 
 // Process control command.
 // Called from ctrl task!
-bool DisplProcCtrl(ControlCmd cmd);
+void DisplProcCtrl(ControlCmd cmd);
 
 //------------------------------------------------------------------------------
 
