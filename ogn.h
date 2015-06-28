@@ -25,12 +25,17 @@
 class OGN_Packet          // Packet structure for the OGN tracker
 { public:
 
-   uint32_t Header;       //    ECRR PMTT AAAA AAAA AAAA AAAA AAAA AAAA
+  union
+  { uint32_t Word[7];
+    uint8_t  Byte[26];
+
+    struct
+   { uint32_t Header;     //    ECRR PMTT AAAA AAAA AAAA AAAA AAAA AAAA
                           // E=Emergency, C=enCrypt/Custom, RR=Relay count, P=Parity, M=isMeteo/Telemetry, TT=address Type, AA..=Address:24-bit
                           // When enCrypt/Custom is set the data (position or whatever) can only be decoded by the owner
                           // This option is indented to pass any type of custom data not foreseen otheriwse
 
-   uint32_t Position[4];  // 0: QQTT TTTT LLLL LLLL LLLL LLLL LLLL LLLL  QQ=fix Quality:2, TTTTTT=time:6, LL..=Latitude:20
+     uint32_t Position[4];// 0: QQTT TTTT LLLL LLLL LLLL LLLL LLLL LLLL  QQ=fix Quality:2, TTTTTT=time:6, LL..=Latitude:20
                           // 1: MBDD DDDD LLLL LLLL LLLL LLLL LLLL LLLL  F=fixMode:1 B=isBaro:1, DDDDDD=DOP:6, LL..=Longitude:20
                           // 2: RRRR RRRR SSSS SSSS SSAA AAAA AAAA AAAA  RR..=turn Rate:8, SS..=Speed:10, AA..=Alt:14
                           // 3: XXXX XXXX YYYY PCCC CCCC CCDD DDDD DDDD  XX..=spare:8, YYYY=AcftType:4, P=Stealth:1, CC..=Climb:9, DD..=Heading:10
@@ -40,7 +45,9 @@ class OGN_Packet          // Packet structure for the OGN tracker
                           // meteo report would transmit: Humidity, Barometric pressure, Temperature, wind Speed/Direction                          
                           // 2: HHHH HHHH SSSS SSSS SSAA AAAA AAAA AAAA
                           // 3: TTTT TTTT YYYY BBBB BBBB BBDD DDDD DDDD  YYYY = report tYpe (meteo, thermal, water level, other telemetry)
-   uint32_t FEC[2];       // Gallager code: 48 check bits for 160 user bits
+     uint32_t FEC[2];     // Gallager code: 48 check bits for 160 user bits
+   } ;
+  } ;
 
    uint8_t State;         // 
    uint8_t RxRSSI;        // [-0.5dBm]
