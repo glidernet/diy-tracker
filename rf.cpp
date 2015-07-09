@@ -32,6 +32,11 @@
 
 #include "spi1.h"       // SPI1 basic calls
 
+#ifdef WITH_LCD5110
+  #include "lcd5110.h"  // DisplProcPacket
+#endif
+
+
 // ================================================================================
 
 // function to control and read status of the RF chip
@@ -100,10 +105,14 @@ static RFStatus rfStatus;        //
 
 static char Line[88];
 
+//------------------------------------------------------------------------------
+
 const RFStatus& GetRFStatus()
 {
   return rfStatus;
 }
+
+//------------------------------------------------------------------------------
 
 static uint8_t Receive(void)                                   // see if a packet has arrived
 { if(!TRX.DIO0_isOn()) return 0;
@@ -152,6 +161,10 @@ static uint8_t Receive(void)                                   // see if a packe
       Format_String(UART1_Write, Line, Len);
       xSemaphoreGive(UART1_Mutex);
       LogLine(Line);
+
+      #ifdef WITH_LCD5110
+      DisplProcPacket(RxPacket);
+      #endif
     }
   }
 

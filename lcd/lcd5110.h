@@ -32,6 +32,9 @@
 // Called from ctrl task!
 void DisplProcCtrl(ControlCmd cmd);
 
+// Process received packet
+void DisplProcPacket(const OGN_Packet& packet);
+
 //------------------------------------------------------------------------------
 
 #ifdef __cplusplus

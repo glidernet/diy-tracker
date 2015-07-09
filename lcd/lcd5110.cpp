@@ -55,6 +55,7 @@ enum DisplayPage
   displ_test,
   displ_start,
   displ_navig,
+  displ_planes,
   displ_rxstats,
 };
 
@@ -94,6 +95,8 @@ public:
     font = &GetBmpFont(newFont);
     letterSpace = font->letterSpace;
     lineSpace = font->lineSpace;
+    letterWidth = font->width + letterSpace;
+    lineHeight = font->height + lineSpace;
   }
 
   static const BmpFont& Font()
@@ -113,12 +116,12 @@ public:
 
   static uint8_t LetterWidth()
   {
-    return font->width + letterSpace;
+    return letterWidth;
   }
 
   static uint8_t LineHeight()
   {
-    return font->height + lineSpace;
+    return lineHeight;
   }
 
   // This function sets a pixel on screenMap to your preferred
@@ -475,6 +478,8 @@ protected:
   static const BmpFont* font;
   static uint8_t letterSpace;
   static uint8_t lineSpace;
+  static uint8_t letterWidth;
+  static uint8_t lineHeight;
 
   // The screenMap variable stores a buffer representation of the
   // pixels on our display. There are 504 total bits in this array,
@@ -549,11 +554,86 @@ const BmpFont* Display::font = &GetBmpFont(font_4x6);
 uint8_t Display::letterSpace = Display::font->letterSpace;
 
 //static
-uint8_t Display::lineSpace = Display::font->lineSpace;;
+uint8_t Display::lineSpace = Display::font->lineSpace;
+
+//static
+uint8_t Display::letterWidth = Display::font->width + letterSpace;
+
+//static
+uint8_t Display::lineHeight = Display::font->height + lineSpace;
 
 
 //static
 uint8_t Display::screenMap[display_width * display_height / 8];
+
+
+//------------------------------------------------------------------------------
+
+enum
+{
+  max_watched_planes = 7,
+  max_watched_age    = 10*60, // [sec] maximum time to watch plane from last packet reception
+};
+
+static volatile SemaphoreHandle_t planesMutex;
+
+//------------------------------------------------------------------------------
+
+// Add more info for each plane
+struct Plane
+{
+  TickType_t rxTime;  // last rx packet timestamp
+  OGN_Packet pos;     // last rx packet
+  bool hasPos;        // indicates if the position has been set
+
+  void Set(const OGN_Packet newPos)
+  {
+    // avoid blocking rf task
+    xSemaphoreTake(planesMutex, portMAX_DELAY);
+    hasPos = true;
+    pos = newPos;
+    rxTime = xTaskGetTickCount();
+    xSemaphoreGive(planesMutex);
+  }
+
+  bool HasPos() const
+  { return hasPos; }
+
+  void Clear()
+  { hasPos = false; }
+
+};
+
+//------------------------------------------------------------------------------
+
+// List of planes beeing watched
+static Plane planes[max_watched_planes];
+
+//------------------------------------------------------------------------------
+
+// Process received packet
+void DisplProcPacket(const OGN_Packet& packet)
+{
+  // store packet into watched planes list
+  // check if plane is already being watched, otherwise replace oldest one
+  // don't replace existing plane if the age is only up to N seconds and
+  // the new plane is at larger distance (watch close planes)
+  Plane* i = &planes[max_watched_planes-1];
+  Plane* oldest = &planes[0];
+  for (; i >= planes; i--)
+  {
+    if (i->pos.getAddress() == packet.getAddress())
+    {
+      i->Set(packet);
+      return;
+    }
+    if (i->rxTime < oldest->rxTime)
+      oldest = i;
+  }
+
+  oldest->Set(packet);
+}
+
 
 //------------------------------------------------------------------------------
 /*
@@ -601,6 +681,31 @@ static void TestPage()
 
 //------------------------------------------------------------------------------
 
+// Draw signal strength indicator (up to 4 lines)
+static void DrawSSI(uint8_t ss, uint8_t x, uint8_t y, uint8_t h)
+{
+  switch (ss)
+  {
+    default:
+    case 4:
+      Display::Line(x+9, y+0, x+9, y+h-1);
+      // fall through
+    case 3:
+      Display::Line(x+6, y+h/4, x+6, y+h-1);
+      // fall through
+    case 2:
+      Display::Line(x+3, y+h/2, x+3, y+h-1);
+      // fall through
+    case 1:
+      Display::Line(x+0, y+(3*h)/4, x+0, y+h-1);
+      // fall through
+    case 0:
+      break;
+  }
+}
+
+//------------------------------------------------------------------------------
+
 // LCD test
 static void StartPage()
 {
@@ -629,7 +734,7 @@ static void NavigPage()
   static uint8_t period = 0;
   char buf[50];
   char* text;
-  uint8_t x, y, h;
+  uint8_t y = 0;
 
   Display::Clear(Display::white);
 
@@ -654,25 +759,8 @@ static void NavigPage()
   }
 
   // GPS indicator
-  x = 3 * Display::LetterWidth() + 1;
-  h = Display::Font().height;
-  switch (gps.FixMode)
-  {
-    case 3:
-      if (gps.Satellites >= 6)
-        Display::Line(x+9, 0, x+9, h-1);
-      Display::Line(x+6, h/4, x+6, h-1);
-      // fall through
-    case 2:
-      Display::Line(x+3, h/2, x+3, h-1);
-      // fall through
-    case 1:
-      Display::Line(x+0, (3*h)/4, x+0, h-1);
-      // fall through
-    case 0:
-    default:
-      break;
-  }
+  DrawSSI((gps.Satellites >= 6) ? 4 : gps.FixMode,
+    3 * Display::LetterWidth() + 1, y, Display::Font().height);
 
   text = buf;
   if (gps.isTimeValid())
@@ -833,6 +921,91 @@ static void RxStatsPage()
 
 //------------------------------------------------------------------------------
 
+// Show received planes positions page
+static void PlanesPage()
+{
+  char buf[50];
+
+  Display::Clear(Display::white);
+
+  for (uint8_t i = 0; i < max_watched_planes; i++)
+  {
+    uint8_t y = i * Display::LineHeight();
+
+    if (!planes[i].HasPos())
+    {
+      Display::String("------", 0, y);
+    }
+    else
+    {
+      uint8_t x = 0;
+
+      // take values fast so that we will not block rf task
+      xSemaphoreTake(planesMutex, portMAX_DELAY);
+      OGN_Packet planePos = planes[i].pos;
+      uint16_t age = (xTaskGetTickCount() - planes[i].rxTime) / (1000*portTICK_PERIOD_MS);
+      // clean out old planes (we will show them for the last time)
+      if (age >= max_watched_age)
+        planes[i].Clear();
+      xSemaphoreGive(planesMutex);
+
+
+      buf[Format_Hex(buf, planePos.getAddress(), 6)] = '\0';
+      Display::String(buf, x, y);
+      x += 6 * Display::LetterWidth() + 2;
+
+      // packet age-sign counter
+      uint8_t charHeight = Display::Font().height - 1;
+      Display::Line(x, y,  x, y+charHeight);
+      x += 1;
+      if (age <= charHeight)
+        Display::Rect(x, y+age, x+3, y+charHeight);
+      x += 3;
+      Display::Line(x, y,  x, y+charHeight);
+      x += 2;
+
+      // correct altitude to fit into 4 chars
+      int16_t alt = (int16_t) planePos.DecodeAltitude();
+      if (alt > 9999)
+        alt = 9999;
+      if (alt < -999)
+        alt = -999;
+
+      buf[(alt >= 0) ? Format_UnsDec(buf, alt) : Format_SignDec(buf, alt)] = '\0';
+      x += 4 * Display::LetterWidth();
+      Display::String(buf, x, y, Display::black, Display::align_right);
+      // switch font for 'm', it's unrecognizable alone in font_4x6
+      Display::SetFont(font_5x7);
+      Display::String("m", x + 3, y-1);
+      x += Display::LetterWidth();
+      Display::SetFont(font_4x6);
+
+      // (ssi can indicate distance, but can be dangerously misleading)
+      // -RxRSSI/2 = dBm
+      //~ uint8_t ss;
+      //~ if (planePos.RxRSSI > 2*30)
+        //~ ss = 1;
+      //~ else if (planePos.RxRSSI > 2*20)
+        //~ ss = 2;
+      //~ else if (planePos.RxRSSI > 2*10)
+        //~ ss = 3;
+      //~ else
+        //~ ss = 4;
+      //~ DrawSSI(ss, Display::Width() - 10, y, Display::Font().height);
+
+      buf[Format_UnsDec(buf, planePos.RxRSSI)] = '\0';
+      Display::String(buf, Display::Width()-1, y, Display::black, Display::align_right);
+
+      //TODO: show climb rate use more recognizable arrows instead of +/-
+      //
+    }
+  }
+
+  Display::Update();
+}
+
+//------------------------------------------------------------------------------
+
 // Process control command.
 // Called from ctrl task!
 void DisplProcCtrl(ControlCmd cmd)
@@ -852,8 +1025,8 @@ void DisplProcCtrl(ControlCmd cmd)
   activePage = (DisplayPage) idx;
 
   if (activePage > displ_rxstats)
-    activePage = displ_start;
-  if (activePage < displ_start)
+    activePage = displ_navig;
+  if (activePage < displ_navig)
     activePage = displ_rxstats;
 }
 
@@ -862,6 +1035,8 @@ void DisplProcCtrl(ControlCmd cmd)
 extern "C"
 void vTaskLcd(void* pvParameters)
 {
+  planesMutex = xSemaphoreCreateMutex();
+
   xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
   Format_String(UART1_Write, "TaskLCD: 5110\n");
   xSemaphoreGive(UART1_Mutex);
@@ -871,6 +1046,23 @@ void vTaskLcd(void* pvParameters)
 
   StartPage();
   //TestPage();
+
+  // planes page test
+  Plane& plane1 = planes[max_watched_planes/2];
+  plane1.rxTime = xTaskGetTickCount();
+  plane1.hasPos = true;
+  plane1.pos.setAddress(0x00000001);
+  plane1.pos.EncodeAltitude(55);
+  plane1.pos.RxRSSI = 2 * 29;
+
+  Plane& plane2 = planes[max_watched_planes-1];
+  plane2.rxTime = xTaskGetTickCount();
+  plane2.hasPos = true;
+  plane2.pos.setAddress(0x00DD01AA);
+  plane2.pos.EncodeAltitude(3478);
+  plane2.pos.RxRSSI = 2 * 9;
+
+  activePage = displ_planes;
 
   uint8_t counter = 0;
   DisplayPage lastPage = activePage;
@@ -883,6 +1075,7 @@ void vTaskLcd(void* pvParameters)
       switch (activePage)
       {
         case displ_start:   StartPage();   break;
+        case displ_planes:  PlanesPage();   break;
         case displ_rxstats: RxStatsPage(); break;
         default:
         case displ_navig:   NavigPage();   break;
