@@ -814,7 +814,7 @@ static void RxStatsPage()
   text += Format_UnsDec(text, rf.RX_RssiUpp, 3);
   *text = '\0';
   Display::String(buf, 0, y);
-  y += Display::LineHeight();
+  y += Display::LineHeight() + 2;
 
   text = buf;
   text += Format_String(text, "fix=");
@@ -826,7 +826,7 @@ static void RxStatsPage()
   }
   *text = '\0';
   Display::String(buf, 0, y);
-  y += Display::LineHeight();
+  //y += Display::LineHeight();
 
   Display::Update();
 }

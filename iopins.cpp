@@ -23,6 +23,7 @@
 
 #include "iopins.h"
 
+
 //------------------------------------------------------------------------------
 
 
@@ -30,9 +31,7 @@
 void InitPins()
 {
   #ifdef WITH_BUTTONS
-    inButtonUp::Init(GPIO_Mode_IPU);
-    inButtonDown::Init(GPIO_Mode_IPU);
-    inButtonSet::Init(GPIO_Mode_IPU);
+    inADC8::Init();
   #endif
 
   #ifdef WITH_LCD5110

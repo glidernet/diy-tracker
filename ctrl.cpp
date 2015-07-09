@@ -100,6 +100,8 @@ static void ProcessInput()
 static void ProcessControls() // process miscellaneous controls input
 {
 #if defined WITH_BUTTONS && defined WITH_LCD5110
+  inADC8::Read();
+
   if (inButtonUp::BtnPress())
     DisplProcCtrl(button_up);
 

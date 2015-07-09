@@ -26,6 +26,7 @@
 
 #include "FreeRTOS.h"
 #include "task.h"
+#include "adc.h"
 
 //------------------------------------------------------------------------------
 
@@ -81,7 +82,7 @@ template<unsigned long int channel, uint16_t pin> struct DigInput
 
 //------------------------------------------------------------------------------
 
-// Digital input pin helper.
+// Digital output pin helper.
 template<unsigned long int channel, uint16_t pin> struct DigOutput
 {
   static void Init(GPIOMode_TypeDef mode, GPIOSpeed_TypeDef speed)
@@ -113,11 +114,97 @@ template<unsigned long int channel, uint16_t pin> struct DigOutput
 
 //------------------------------------------------------------------------------
 
+// Analog input pin helper.
+template<unsigned long int channel, uint16_t pin, uint8_t analogChannel>
+struct AnalogInput
+{
+  static void Init()
+  {
+    //~ TODO: B0 is initialized in adc.cpp, should be refactored
+    //~ GPIO_InitTypeDef GPIO_InitStructure;
+    //~ GPIO_InitStructure.GPIO_Pin  = pin;
+    //~ GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AIN;
+    //~ GPIO_Init(reinterpret_cast<GPIO_TypeDef*>(channel), &GPIO_InitStructure);
+    value = (uint16_t) -1;
+  }
+
+  // perform new A/D conversion and return the value
+  // (can block for significant amount of time)
+  static uint16_t Read()
+  {
+    return value = ADC1_Read(ADC_Channel_8);
+  }
+
+  // return value from the last conversion
+  static uint16_t Get()
+  {
+    return value;
+  }
+
+protected:
+  static uint16_t value;
+};
+
+template<unsigned long int channel, uint16_t pin, uint8_t analogChannel>
+uint16_t AnalogInput<channel, pin, analogChannel>::value;
+
+
+//------------------------------------------------------------------------------
+
+// Analog button input pin helper.
+// mean_value is the value expected on analog input if the button is pressed.
+template<typename analogInput, uint16_t mean_value>
+struct AnalogButton
+{
+  enum Const
+  {
+    min_btn_press_time = 70,
+    // maximum  accepted value spread from defined mean_value
+    max_spread = 300,
+  };
+
+  // test for immediate input state
+  // (AnalogInput::Read() has to be called before)
+  static bool InputMatched()
+  {
+    if (analogInput::Get() >= (mean_value - max_spread) && (analogInput::Get() <= (mean_value + max_spread)))
+      return true;
+    return false;
+  }
+
+  // test for button press
+  // (AnalogInput::Read() has to be called before)
+  static bool BtnPress()
+  {
+    static bool lastSt   = false;
+    static bool reported = false;
+    static TickType_t lastTm = 0;
+
+    if (InputMatched() != lastSt)
+    {
+      lastSt = !lastSt;
+      lastTm = xTaskGetTickCount();
+      reported = false;
+    }
+    else if (lastSt && (xTaskGetTickCount() - lastTm) >= min_btn_press_time && !reported)
+    //else if (lastSt && !reported)
+    {
+      reported = true;
+      return true;
+    }
+    return false;
+  }
+};
+
+//------------------------------------------------------------------------------
+
 #ifdef WITH_BUTTONS
-  // control buttons PIN configuration
-  typedef DigInput<GPIOB_BASE, GPIO_Pin_7> inButtonUp;
-  typedef DigInput<GPIOB_BASE, GPIO_Pin_8> inButtonDown;
-  typedef DigInput<GPIOB_BASE, GPIO_Pin_9> inButtonSet;
+  // analog control buttons PIN configuration
+  // (ladder Vcc + 2k2 - down/B0 - 1k0 - up - 2k2 - set: each button connects GND)
+  typedef AnalogInput<GPIOB_BASE, GPIO_Pin_0, ADC_Channel_8> inADC8;
+  typedef AnalogButton<inADC8, 0> inButtonDown;
+  typedef AnalogButton<inADC8, 1280> inButtonUp;
+  typedef AnalogButton<inADC8, 2427> inButtonSet;
 #endif
 
 #ifdef WITH_LCD5110
