@@ -299,7 +299,7 @@ void vTaskRF(void* pvParameters)
 
     TRX.TriggerTemp();
     vTaskDelay(1); // while(TRX.RunningTemp()) taskYIELD();
-    int8_t ChipTemp= 165-TRX.ReadTemp();
+    rfStatus.ChipTemp = 165-TRX.ReadTemp();
 
     TRX.WriteMode(RFM69_OPMODE_RX);                            // switch to receive mode
     vTaskDelay(1);
@@ -327,7 +327,7 @@ void vTaskRF(void* pvParameters)
       Line[Len++]=',';
       Len+=Format_SignDec(Line+Len, -(rfStatus.RX_RssiUpp/2));                       // average RF level on the upper frequency
       Line[Len++]=',';
-      Len+=Format_SignDec(Line+Len, (int16_t)ChipTemp);
+      Len+=Format_SignDec(Line+Len, (int16_t)rfStatus.ChipTemp);
       Line[Len++]=',';
       // Len+=Format_UnsDec(Line+Len, MCU_Temp);
       // Line[Len++]=',';

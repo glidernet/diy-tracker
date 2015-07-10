@@ -1,6 +1,7 @@
 #include "spi1.h"
 
 struct RFStatus {
+  uint8_t ChipTemp;     // [degC]    trx chip temperature
   uint8_t RX_Packets;   // [packets] counts received packets
   uint8_t RX_Idle;      // [sec]     time the receiver did not get any packets
   int32_t RX_RssiLow;   // [-0.5dBm] background noise level on two frequencies

@@ -55,11 +55,28 @@ enum DisplayPage
   displ_test,
   displ_start,
   displ_navig,
-  displ_planes,
+  displ_planes1,
+  displ_planes2,
   displ_rxstats,
 };
 
 static volatile DisplayPage activePage = displ_navig;
+static volatile bool        updateDisplNow  = false;
+static volatile bool        setCmdEnabled = false;
+
+
+//------------------------------------------------------------------------------
+
+
+// Convert in -2*dBm to dB relative to -100dBm level.
+uint8_t RSSI2dB(uint8_t rssi)
+{
+  rssi /= 2;
+  if (rssi > 100)
+    return 0;
+  return 100-rssi;
+}
+
 
 //------------------------------------------------------------------------------
 
@@ -573,6 +590,7 @@ enum
 {
   max_watched_planes = 7,
   max_watched_age    = 10*60, // [sec] maximum time to watch plane from last packet reception
+  max_notice_age     = 10,    // [sec] maximum time from last packet reception for plane to be included in notice
 };
 
 static volatile SemaphoreHandle_t planesMutex;
@@ -602,6 +620,25 @@ struct Plane
   void Clear()
   { hasPos = false; }
 
+  // reset hasPos flag if the position is too old, return age [sec]
+  uint16_t ClearOld()
+  {
+    uint16_t age = (xTaskGetTickCount() - rxTime) / (1000*portTICK_PERIOD_MS);
+    if (age >= max_watched_age)
+      Clear();
+    return age;
+  }
+
+  // Copy data and clear itself if the position is too old, return age [sec]
+  uint16_t CopyClearOld(Plane& r)
+  {
+    // take values fast so that we will not block rf task
+    xSemaphoreTake(planesMutex, portMAX_DELAY);
+    uint16_t age = ClearOld();
+    r = *this;
+    xSemaphoreGive(planesMutex);
+    return age;
+  }
 };
 
 //------------------------------------------------------------------------------
@@ -711,7 +748,7 @@ static void StartPage()
 {
   Display::Clear(Display::black);
   Display::Rect(0, 0, Display::Width(), Display::LineHeight(), true, Display::white);
-  //              "----------------"
+  //              "-----------------"
   Display::String("OGN Tracker v0.1", 0, 0, Display::black, Display::align_center);
   for (int r=0; r<16; r++)
   {
@@ -812,13 +849,46 @@ static void NavigPage()
 
   Display::SetFont(font_4x6);
 
-  y = Display::Height() - Display::Font().height;
-  text = buf;
-  text += Format_String(text, GetAcftTypeShort(Parameters.getAcftType()));
-  *text++ = ' ';
-  text += Format_Hex(text, Parameters.getAddress(), 6);
-  *text = '\0';
-  Display::String(buf, 0, y);
+  // display number of aircrafts in range
+
+  uint8_t visiblePlanes = 0;
+  for (uint8_t i = 0; i < max_watched_planes; i++)
+  {
+    if (planes[i].HasPos())
+    {
+      uint16_t age = planes[i].ClearOld();
+      if (age <= max_notice_age)
+        visiblePlanes++;
+    }
+  }
+
+  // "-------------"
+  // " >=7 planes  "
+  if (visiblePlanes > 0)
+  {
+    Display::SetFont(font_5x7);
+    y = Display::Height() - Display::Font().height;
+    text = buf;
+    if (visiblePlanes >= max_watched_planes)
+      text += Format_String(text, ">=");
+    text += Format_UnsDec(text, visiblePlanes);
+    text += Format_String(text, " plane");
+    if (visiblePlanes > 1)
+      text += Format_String(text, "s");
+
+    *text = '\0';
+    Display::String(buf, 0, y, Display::black, Display::align_center);
+
+    // blink '!!'
+    if ((period & 1) == 0)
+    {
+      //Display::String("!!!", Display::Width() - 1, y, Display::black, Display::align_right);
+      Display::SetFont(font_7x15);
+      y = Display::Height() - Display::Font().height;
+      Display::String("!", Display::Width() - 1, y, Display::black, Display::align_right);
+    }
+    Display::SetFont(font_4x6);
+  }
 
   Display::Update();
 
@@ -830,8 +900,10 @@ static void NavigPage()
 // Show status page (GPS & Rx stats)
 static void RxStatsPage()
 {
+  static uint8_t period = 0;
   char buf[50];
   char* text;
+  uint8_t x = 0;
   uint8_t y = 0;
 
   Display::Clear(Display::white);
@@ -866,8 +938,6 @@ static void RxStatsPage()
   Display::String(buf, Display::Width() - 1, y, Display::black, Display::align_right);
   y += Display::LineHeight() + 2;
 
-  Display::SetFont(font_5x7);
-
   text = buf;
   text += Format_String(text, "id:");
   text += Format_String(text, GetAcftTypeShort(Parameters.getAcftType()));
@@ -877,53 +947,84 @@ static void RxStatsPage()
   Display::String(buf, 0, y, Display::black, Display::align_center);
   y += Display::LineHeight() + 2;
 
-  Display::SetFont(font_4x6);
-
   const RFStatus& rf = GetRFStatus();
 
-  // "----------------"
-  // "rx=25 l=25 +14dB"
-  text = buf;
-  text += Format_String(text, "rx=");
-  text += Format_UnsDec(text, rf.RX_Packets % 100, 2);
-  text += Format_String(text, " l=");
-  text += Format_UnsDec(text, rf.RX_Idle % 100, 2);
-  text += Format_String(text, " ");
-  text += Format_SignDec(text, Parameters.getTxPower());
-  text += Format_String(text, "dB");
-  *text = '\0';
-  Display::String(buf, 0, y);
-  y += Display::LineHeight();
+  // "-----------------"
+  // "tx  =+25dB 30'C"
+  x = 0;
+  Display::String("tx  =", x, y);
+  x += 8 * Display::LetterWidth() - 2;
+
+  buf[Format_SignDec(buf, Parameters.getTxPower())] = '\0';
+  Display::String(buf, x, y, Display::black, Display::align_right);
+  x += Display::LetterSpace();
+  Display::String("dB", x, y, Display::black);
+  x += 2 * Display::LetterWidth();
 
   text = buf;
-  text += Format_String(text, " ssL=");
-  text += Format_UnsDec(text, rf.RX_RssiLow, 3);
-  text += Format_String(text, " ssU=");
-  text += Format_UnsDec(text, rf.RX_RssiUpp, 3);
+  text += Format_UnsDec(text, rf.ChipTemp);
+  text += Format_String(text, CS_DEGREE "C");
+  *text = '\0';
+  Display::String(buf, Display::Width()-1, y, Display::black, Display::align_right);
+  y += Display::LineHeight();
+
+  // "-----------------"
+  // "plns=25  last=125"
+  text = buf;
+  text += Format_String(text, "plns=");
+  text += Format_UnsDec(text, rf.RX_Packets % 100, 2);
+  text += Format_String(text, "  last=");
+  text += Format_UnsDec(text, rf.RX_Idle % 999, 3);
+  *text = '\0';
+  Display::String(buf, 0, y);
+
+  // blink line under tx power if setting enabled
+  if (setCmdEnabled)
+  {
+    Display::Line(x - 5 * Display::LetterWidth(), y - Display::LineSpace(), x, y - Display::LineSpace(),
+      ((period & 1) == 0) ? Display::white : Display::black);
+  }
+
+  y += Display::LineHeight();
+
+  // "-----------------"
+  // "ssL=99dB ssU=99dB"
+  text = buf;
+  text += Format_String(text, "ssL=");
+  text += Format_UnsDec(text, RSSI2dB(rf.RX_RssiLow), 2);
+  text += Format_String(text, "dB ssU=");
+  text += Format_UnsDec(text, RSSI2dB(rf.RX_RssiUpp), 2);
+  text += Format_String(text, "dB");
   *text = '\0';
   Display::String(buf, 0, y);
   y += Display::LineHeight() + 2;
 
+  // "-----------------"
+  // "fix=3 sat=12"
   text = buf;
-  text += Format_String(text, "fix=");
+  text += Format_String(text, "fix =");
   text += Format_UnsDec(text, gps.FixMode);
   if (gps.FixMode > 0)
   {
-    text += Format_String(text, " s=");
+    text += Format_String(text, " sat=");
     text += Format_UnsDec(text, gps.Satellites);
   }
   *text = '\0';
-  Display::String(buf, 0, y);
-  //y += Display::LineHeight();
+  Display::String(buf, 0, y, Display::black, Display::align_center);
 
   Display::Update();
+
+  period++;
 }
 
 //------------------------------------------------------------------------------
 
 // Show received planes positions page
-static void PlanesPage()
+// "id-relative positon [m/km]/hours-GPS alt[m]-vertical speed[m/s]"
+// "AA-500/12h-9999-1"
+static void Planes1Page()
 {
+  Plane plane;
   char buf[50];
 
   Display::Clear(Display::white);
@@ -941,14 +1042,102 @@ static void PlanesPage()
       uint8_t x = 0;
 
       // take values fast so that we will not block rf task
-      xSemaphoreTake(planesMutex, portMAX_DELAY);
-      OGN_Packet planePos = planes[i].pos;
-      uint16_t age = (xTaskGetTickCount() - planes[i].rxTime) / (1000*portTICK_PERIOD_MS);
-      // clean out old planes (we will show them for the last time)
-      if (age >= max_watched_age)
-        planes[i].Clear();
-      xSemaphoreGive(planesMutex);
+      uint16_t age = planes[i].CopyClearOld(plane);
+      OGN_Packet& planePos = plane.pos;
 
+      // "-----------------"
+      // "id-relative positon [m-km]/oclok-GPS alt[m]-vertical speed[m/s]"
+      // "01-500/12h-9999-1"
+      // "01-9km/05h-9999-1"
+
+      buf[Format_Hex(buf, planePos.getAddress(), 2)] = '\0';
+      Display::String(buf, x, y);
+      x += 2 * Display::LetterWidth() + 1;
+
+      // packet age-sign counter
+      uint8_t charHeight = Display::Font().height - 1;
+      Display::Line(x, y,  x, y+charHeight);
+      x += 1;
+      if (age <= charHeight)
+        Display::Rect(x, y+age, x+3, y+charHeight);
+      x += 3;
+      Display::Line(x, y,  x, y+charHeight);
+      x += 3;
+
+      //Display::String("8km/12h", x, y);
+      Display::String("-km/--h", x, y);
+      x += 7 * Display::LetterWidth();
+
+      // correct altitude to fit into 4 chars
+      int16_t alt = (int16_t) planePos.DecodeAltitude();
+      if (alt > 9999)
+        alt = 9999;
+      if (alt < -999)
+        alt = -999;
+
+      buf[(alt >= 0) ? Format_UnsDec(buf, alt) : Format_SignDec(buf, alt)] = '\0';
+      x += 4 * Display::LetterWidth();
+      Display::String(buf, x, y, Display::black, Display::align_right);
+      x += Display::LetterWidth()-2;
+
+      // show climb rate, use more recognizable arrows instead of +/-
+      int8_t climb = planePos.DecodeClimbRate()/10;
+      if (climb > 9)
+        climb = 9;
+      else if (climb < -9)
+        climb = -9;
+
+      if (climb >= 0)
+      {
+        // without extra \0 sometimes doesn't work - compiler bug, or do we have
+        // somewhere nasty buffer oveflow?
+        Display::String(CS_ARRUP "\0", x, y);
+        buf[Format_UnsDec(buf, climb)] = '\0';
+      }
+      else
+      {
+        Display::String(CS_ARRDOWN, x, y);
+        buf[Format_UnsDec(buf, climb * -1)] = '\0';
+      }
+      Display::String(buf, Display::Width()-1, y, Display::black, Display::align_right);
+    }
+  }
+
+  Display::Update();
+}
+
+//------------------------------------------------------------------------------
+
+// Show received planes positions page
+// "id-ground speed[km/h]-rssi[dBm]"
+// "DDAAAA-100kmh-||"
+static void Planes2Page()
+{
+  Plane plane;
+  char buf[50];
+
+  Display::Clear(Display::white);
+
+  for (uint8_t i = 0; i < max_watched_planes; i++)
+  {
+    uint8_t y = i * Display::LineHeight();
+
+    if (!planes[i].HasPos())
+    {
+      Display::String("------", 0, y);
+    }
+    else
+    {
+      uint8_t x = 0;
+
+      // take values fast so that we will not block rf task
+      uint16_t age = planes[i].CopyClearOld(plane);
+      OGN_Packet& planePos = plane.pos;
+
+
+      // "-----------------"
+      // "id-ground speed[km/h]-rssi[dBm]"
+      // "DDAAAA-100kmh-|||"
 
       buf[Format_Hex(buf, planePos.getAddress(), 6)] = '\0';
       Display::String(buf, x, y);
@@ -962,42 +1151,31 @@ static void PlanesPage()
         Display::Rect(x, y+age, x+3, y+charHeight);
       x += 3;
       Display::Line(x, y,  x, y+charHeight);
-      x += 2;
+      x += 2 + 3 * Display::LetterWidth() + 1;
 
-      // correct altitude to fit into 4 chars
-      int16_t alt = (int16_t) planePos.DecodeAltitude();
-      if (alt > 9999)
-        alt = 9999;
-      if (alt < -999)
-        alt = -999;
-
-      buf[(alt >= 0) ? Format_UnsDec(buf, alt) : Format_SignDec(buf, alt)] = '\0';
-      x += 4 * Display::LetterWidth();
+      // GPS speed [km/h]
+      buf[Format_UnsDec(buf, 1.852*0.2*planePos.DecodeSpeed())] = '\0';
       Display::String(buf, x, y, Display::black, Display::align_right);
-      // switch font for 'm', it's unrecognizable alone in font_4x6
-      Display::SetFont(font_5x7);
-      Display::String("m", x + 3, y-1);
-      x += Display::LetterWidth();
-      Display::SetFont(font_4x6);
+      x += 2;
+      Display::String("kmh", x, y);
 
       // (ssi can indicate distance, but can be dangerously misleading)
-      // -RxRSSI/2 = dBm
-      //~ uint8_t ss;
-      //~ if (planePos.RxRSSI > 2*30)
-        //~ ss = 1;
-      //~ else if (planePos.RxRSSI > 2*20)
-        //~ ss = 2;
-      //~ else if (planePos.RxRSSI > 2*10)
-        //~ ss = 3;
-      //~ else
-        //~ ss = 4;
-      //~ DrawSSI(ss, Display::Width() - 10, y, Display::Font().height);
+      // -RxRSSI/2 = dBm, we will show dB relative to -100dBm
+      uint8_t rxSS = RSSI2dB(planePos.RxRSSI);
 
-      buf[Format_UnsDec(buf, planePos.RxRSSI)] = '\0';
-      Display::String(buf, Display::Width()-1, y, Display::black, Display::align_right);
+      uint8_t ss;
+      if (rxSS >= 20)
+        ss = 4;
+      else if (rxSS >= 10)
+        ss = 3;
+      else if (rxSS >= 5)
+        ss = 2;
+      else
+        ss = 1;
+      DrawSSI(ss, Display::Width() - 10, y, Display::Font().height);
 
-      //TODO: show climb rate use more recognizable arrows instead of +/-
-      //
+      //buf[Format_UnsDec(buf, rxSS)] = '\0';
+      //Display::String(buf, Display::Width()-1, y, Display::black, Display::align_right);
     }
   }
 
@@ -1006,19 +1184,60 @@ static void PlanesPage()
 
 //------------------------------------------------------------------------------
 
+// Process control command in 'set' mode for RxStats page.
+// Returns true if the command has been processed, false if it should be passed.
+static bool ProcRxStatsSet(ControlCmd cmd)
+{
+  int8_t power = Parameters.getTxPower();
+  switch (cmd)
+  {
+    case button_up:   power++; break;
+    case button_down: power--; break;
+
+    case button_set:
+    default:
+      return false;
+  }
+
+  // check limits
+  if (power > 17)
+    power = 17;
+  if (power < -14)
+    power = -14;
+
+  Parameters.setTxPower(power);
+
+  updateDisplNow = true;
+  return true;
+}
+
+//------------------------------------------------------------------------------
+
 // Process control command.
 // Called from ctrl task!
+// - 'Up/Down' changes page
+// - 'Set' in displ_rxstats page enables changing Tx power
 void DisplProcCtrl(ControlCmd cmd)
 {
   int idx = activePage;
+
+  if (setCmdEnabled && activePage == displ_rxstats)
+  {
+    if (ProcRxStatsSet(cmd))
+      return;
+  }
 
   switch (cmd)
   {
     case button_up:   idx++; break;
     case button_down: idx--; break;
 
-    default:
     case button_set:
+      if (activePage == displ_rxstats)
+        setCmdEnabled = !setCmdEnabled;
+      break;
+
+    default:
       return;
   }
 
@@ -1028,6 +1247,8 @@ void DisplProcCtrl(ControlCmd cmd)
     activePage = displ_navig;
   if (activePage < displ_navig)
     activePage = displ_rxstats;
+
+  updateDisplNow = true;
 }
 
 //------------------------------------------------------------------------------
@@ -1052,38 +1273,40 @@ void vTaskLcd(void* pvParameters)
   plane1.rxTime = xTaskGetTickCount();
   plane1.hasPos = true;
   plane1.pos.setAddress(0x00000001);
-  plane1.pos.EncodeAltitude(55);
-  plane1.pos.RxRSSI = 2 * 29;
+  plane1.pos.EncodeSpeed(15*5*0.539957);
+  plane1.pos.EncodeAltitude(-55);
+  plane1.pos.EncodeClimbRate(2*10);
+  plane1.pos.RxRSSI = 2 * 86;
 
   Plane& plane2 = planes[max_watched_planes-1];
   plane2.rxTime = xTaskGetTickCount();
   plane2.hasPos = true;
   plane2.pos.setAddress(0x00DD01AA);
+  plane2.pos.EncodeSpeed(145*5*0.539957);
   plane2.pos.EncodeAltitude(3478);
+  plane2.pos.EncodeClimbRate(-24*10);
   plane2.pos.RxRSSI = 2 * 9;
 
-  activePage = displ_planes;
+  //~ activePage = displ_planes1;
 
   uint8_t counter = 0;
-  DisplayPage lastPage = activePage;
   while (true)
   {
-    // speeding up page change after button press
-    if (counter++ % 3 == 0 || lastPage != activePage)
+    //~ // speeding up page refresh after button press
+    if (counter++ % 4 == 0 || updateDisplNow)
     {
-      lastPage = activePage;
+      updateDisplNow = false;
       switch (activePage)
       {
         case displ_start:   StartPage();   break;
-        case displ_planes:  PlanesPage();   break;
+        case displ_planes1: Planes1Page(); break;
+        case displ_planes2: Planes2Page(); break;
         case displ_rxstats: RxStatsPage(); break;
         default:
         case displ_navig:   NavigPage();   break;
       }
     }
-    vTaskDelay(250);
+    // add 10ms more each second, so that seconds in clock will be always updated
+    vTaskDelay(252);
   }
-
-  Display::Clear(Display::white);
-  Display::Update();
 }

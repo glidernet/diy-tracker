@@ -36,10 +36,17 @@ enum BmpFonts
 };
 
 // special characters
-#define CH_HALFSP '\x80' // half space
-#define CS_HALFSP "\x80" // half space
-#define CH_DEGREE '\x81' // degree of Celsius sign
-#define CS_DEGREE "\x81" // degree of Celsius sign
+#define CH_HALFSP  '\x80' // half space
+#define CS_HALFSP  "\x80" // half space
+
+#define CH_DEGREE  '\x81' // degree of Celsius sign
+#define CS_DEGREE  "\x81" // degree of Celsius sign
+
+#define CH_ARRUP   '\x82' // arrow up
+#define CS_ARRUP   "\x82" // arrow up
+
+#define CH_ARRDOWN '\x83' // arrow down
+#define CS_ARRDOWN "\x83" // arrow down
 
 //------------------------------------------------------------------------------
 
