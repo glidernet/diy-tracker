@@ -7,8 +7,6 @@
 #include "nmea.h"
 #include "ubx.h"
 
-#include "ogn.h"
-
 #include "uart1.h"
 #include "uart2.h"
 
@@ -16,6 +14,7 @@
 
 #include "gps.h"
 #include "ctrl.h"
+
 #include "knob.h"
 
 // ----------------------------------------------------------------------------
@@ -60,6 +59,7 @@ static uint8_t     PktIdx;
 static TickType_t Burst_TickCount;     // [msec] TickCount when the data burst from GPS started
 
          TickType_t PPS_TickCount;       // [msec] TickCount of the most recent PPS pulse
+static   uint32_t   GPS_TimeSinceMSG;    // [msec] time since the last GPS message received
          uint32_t   GPS_TimeSinceLock;   // [sec] time since the GPS has a lock
 volatile  uint8_t   GPS_Sec=0;           // [sec] UTC time: second
          uint32_t   GPS_UnixTime=0;      // [sec] UTC date/time in Unix format
@@ -111,6 +111,16 @@ static void GPS_LockEnd(void)                       // called when GPS looses a 
 
 // ----------------------------------------------------------------------------
 
+const OgnPosition& GetGPSStatus()
+{
+  // after 10 sec rx timeout, return empty data (reseting -1 also solves GPS_TimeSinceMSG overflow)
+  if (GPS_TimeSinceMSG > 10*1000)
+    Position[(PosIdx-1)&3].Clear();
+
+  return Position[(PosIdx-1)&3];
+}
+
+
 static void GPS_BurstStart(void)                                           // when GPS starts sending the data on the serial port
 { Burst_TickCount=xTaskGetTickCount(); }
 
@@ -158,6 +168,7 @@ static void GPS_BurstEnd(void)                                             // wh
 
 static void GPS_NMEA(void)                                                 // when GPS gets a correct NMEA sentence
 { LED_PCB_Flash(2);                                                        // Flash the LED for 2 ms
+  GPS_TimeSinceMSG = 0;
   Position[PosIdx].ReadNMEA(NMEA);                                         // read position elements from NMEA
   if( NMEA.isGPRMC() || NMEA.isGPGGA() )
   { static char CRNL[3] = "\r\n";
@@ -211,6 +222,7 @@ void vTaskGPS(void* pvParameters)
       if(GPS_PPS_isOn()) { if(!PPS) { PPS=1; GPS_PPS_On();  } }            // monitor GPS PPS signal
                     else { if( PPS) { PPS=0; GPS_PPS_Off(); } }
 
+      GPS_TimeSinceMSG++;
       LineIdle++;                                                           // count idle time
       for( ; ; )
       { uint8_t Byte; int Err=UART2_Read(Byte); if(Err<=0) break;           // get Byte from serial port

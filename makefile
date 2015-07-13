@@ -8,11 +8,14 @@ TCHAIN = arm-none-eabi
 
 # list of optional features to be compiled in:
 # i2c1 ... I2C-1 interface
-# sdcard ... SD card interface with FAT filesystem
+# sdcard ... SD card interface with FAT filesystem (selects spi2 too)
 # bmp180 ... barometric pressure bmp180 sensor (selects i2c1 too)
 # sdlog ... logging to sdcard (selects sdcard too)
 # beeper ... beeper (vario etc)
 # knob ... user knob to set volume and options
+# buttons ... controls buttons (for display menu e.g., sound volume etc.)
+# lcd5110 ... 84x48 LCD with PCD8544 controller (uses SPI2 CLK & MOSI)
+# displvflip ... vertically flip display screen
 
 WITH_OPTS = bmp180 beeper
 
@@ -21,6 +24,8 @@ MCU = STM32F103C8  # STM32F103C8 for no-name STM32F1 board, STM32F103CB for Mapl
 #-------------------------------------------------------------------------------
 
 C_SRC += main.cpp
+
+C_SRC += iopins.cpp
 
 C_SRC += gps.cpp
 C_SRC += rf.cpp
@@ -31,7 +36,6 @@ C_SRC += knob.cpp
 C_SRC += uart1.cpp
 C_SRC += uart2.cpp
 C_SRC += spi1.cpp
-C_SRC += spi2.cpp
 
 C_SRC += format.cpp
 C_SRC += ldpc.cpp
@@ -39,6 +43,7 @@ C_SRC += bitcount.cpp
 
 C_SRC += adc.cpp
 C_SRC += nmea.cpp
+C_SRC += ogn.cpp
 
 #-------------------------------------------------------------------------------
 
@@ -80,9 +85,29 @@ endif
 
 ifneq ($(findstring sdcard,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_SDCARD
+  WITH_OPTS += spi2
   INCDIR += -Ifatfs
   C_SRC  += sd.cpp
   C_SRC  += fatfs/ff.c
+endif
+
+ifneq ($(findstring lcd5110,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_LCD5110
+  INCDIR += -Ilcd
+  C_SRC  += lcd/bmpfonts.cpp
+  C_SRC  += lcd/lcd5110.cpp
+endif
+
+ifneq ($(findstring displvflip,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_DISPL_VFLIP
+endif
+
+ifneq ($(findstring buttons,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_BUTTONS
+endif
+
+ifneq ($(findstring spi2,$(WITH_OPTS)),)
+  C_SRC += spi2.cpp
 endif
 
 ifneq ($(findstring beeper,$(WITH_OPTS)),)
@@ -129,7 +154,7 @@ CPP_OPT = $(Cx_OPT) -fno-rtti
 LDSCRIPT = link.ld
 
 LNK_OPT  = -Wl,-Map=$(OUTDIR)/main.map -Wl,--cref -Wl,--emit-relocs -Wl,--gc-sections
-LNK_OPT += -nostartfiles --specs=nosys.specs --specs=nano.specs
+LNK_OPT += --specs=nosys.specs --specs=nano.specs #-nostartfiles - _init needed for static ctors init
 LNK_OPT += -lgcc -lc # -lstdc++
 LNK_OPT += -T$(LDSCRIPT)
 

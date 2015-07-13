@@ -18,6 +18,28 @@
 
 #include "format.h"
 
+enum AcftType {
+  acft_unknown          = 0,
+  acft_glider           = 1,
+  acft_tow_plane        = 2,
+  acft_helicopter       = 3,
+  acft_parachute        = 4,
+  acft_drop_plane       = 5,
+  acft_hang_glider      = 6,
+  acft_para_glider      = 7,
+  acft_powered_aircraft = 8,
+  acft_jet_aircraft     = 9,
+  acft_ufo              = 10,
+  acft_balloon          = 11,
+  acft_airship          = 12,
+  acft_uav              = 13,
+  acft_static_object    = 15,
+};
+
+// return aircraft type short text
+const char* GetAcftTypeShort(AcftType type);
+
+
                           // the packet description here is how it look on the little-endian CPU before sending it to the RF chip
                           // nRF905, CC1101, SPIRIT1, RFM69 chips actually reverse the bit order within every byte
                           // thus on the air the bits appear MSbit first for every byte transmitted

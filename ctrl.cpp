@@ -3,7 +3,11 @@
 #include "semphr.h"
 #include "queue.h"
 
+#include "stm32f10x_gpio.h"
+
 #include <string.h>
+
+#include "iopins.h"
 
 #include "ctrl.h"
 
@@ -15,14 +19,20 @@
 #include "main.h"
 #include "gps.h"
 
+#ifdef WITH_LCD5110
+  #include "lcd5110.h"
+#endif
+
 #ifdef WITH_SDCARD
   #include "diskio.h"
   #include "ff.h"
 #endif
 
+//------------------------------------------------------------------------------
+
 uint32_t get_fattime(void) { return GPS_FatTime; } // for FatFS to have the correct time
 
-// ======================================================================================
+//------------------------------------------------------------------------------
 
 static char Line[64];
 
@@ -68,14 +78,14 @@ static void ProcessCtrlC(void)                                  // print system 
 
 static NMEA_RxMsg NMEA;
 
-static void ReadParameters(void)  // read parameters requested by the user in the NMEA sent.
+static void ReadParameters()  // read parameters requested by the user in the NMEA sent.
 {
 }
 
-static void ProcessNMEA(void)     // process a valid NMEA that got to the console
+static void ProcessNMEA()     // process a valid NMEA that got to the console
 { }
 
-static void ProcessInput(void)
+static void ProcessInput()
 {
   for( ; ; )
   { uint8_t Byte; int Err=UART1_Read(Byte); if(Err<=0) break; // get byte from console, if none: exit the loop
@@ -86,6 +96,23 @@ static void ProcessInput(void)
       NMEA.Clear(); }                                         // clear the NMEA processor for the next sentence
   }
 }
+
+static void ProcessControls() // process miscellaneous controls input
+{
+#if defined WITH_BUTTONS && defined WITH_LCD5110
+  inADC8::Read();
+
+  if (inButtonUp::BtnPress())
+    DisplProcCtrl(button_up);
+
+  if (inButtonDown::BtnPress())
+    DisplProcCtrl(button_down);
+
+  if (inButtonSet::BtnPress())
+    DisplProcCtrl(button_set);
+#endif
+}
+
 
 #ifdef WITH_SDLOG
 static   uint16_t  LogDate     =              0;                  // [days] date = UnixTime/86400
@@ -186,14 +213,20 @@ void vTaskCTRL(void* pvParameters)
 
   NMEA.Clear();
 
+  uint8_t counter = 0;
   while(1)
   { vTaskDelay(1);
 
-    ProcessInput();                                             // process console input
+    ProcessInput();                                             // process console & button input
+
 #ifdef WITH_SDLOG
     ProcessLog();                                               // process lines to written to the log file
 #endif
 
+    // 16ms period is enough for controls
+    if ((counter & 0xF) == 0)
+      ProcessControls();
+
+    counter++;
   }
 }
-
