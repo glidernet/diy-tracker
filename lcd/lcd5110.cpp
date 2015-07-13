@@ -50,6 +50,11 @@
 
 //------------------------------------------------------------------------------
 
+// vertically flip screen
+//#define WITH_DISPL_VFLIP
+
+//------------------------------------------------------------------------------
+
 enum DisplayPage
 {
   displ_test,
@@ -428,10 +433,14 @@ public:
   {
     // Prevent the RTOS kernel swapping out the task.
     GotoXY(0, 0);
-    for (int i=0; i < (Width() * Height() / 8); i++)
-    {
-      DevWrite(tx_data, screenMap[i]);
-    }
+
+    #ifdef WITH_DISPL_VFLIP
+      for (int i=(Width() * Height() / 8) - 1; i >= 0; i--)
+        DevWrite(tx_data, u8Reverse[screenMap[i]]);
+    #else
+      for (int i=0; i < (Width() * Height() / 8); i++)
+        DevWrite(tx_data, screenMap[i]);
+    #endif
   }
 
   // Set contrast can set the LCD Vop to a value between 0 and 127.
@@ -478,12 +487,12 @@ public:
     DevDeselect();
     DevReset();
 
-    DevWrite(tx_cmd, 0x21); //Tell LCD extended commands follow
-    DevWrite(tx_cmd, 0xC6); //Set LCD Vop (Contrast)
-    DevWrite(tx_cmd, 0x06); //Set Temp coefficent
-    DevWrite(tx_cmd, 0x15); //LCD bias mode 1:48 (try 0x13)
+    DevWrite(tx_cmd, 0x21); // tell LCD extended commands follow
+    DevWrite(tx_cmd, 0xC6); // set LCD Vop (Contrast)
+    DevWrite(tx_cmd, 0x06); // set Temp coefficient
+    DevWrite(tx_cmd, 0x15); // LCD bias mode 1:48 (try 0x13)
     DevWrite(tx_cmd, 0x20);
-    DevWrite(tx_cmd, 0x0C); //Set display control, normal mode.
+    DevWrite(tx_cmd, 0x0C); // set display control, normal mode.
   }
 
 //------------------------------------------------------------------------------
@@ -513,6 +522,11 @@ protected:
   // Because the PCD8544 won't let us write individual pixels at a
   // time, this is how we can make targeted changes to the display.
   static uint8_t screenMap[display_width * display_height / 8];
+
+  #ifdef WITH_DISPL_VFLIP
+  // bits reverse lookup table; macro generator by Hallvard Furuseth
+  static const unsigned char u8Reverse[256];
+  #endif
 
   // Transfer type for LCD controller
   enum DevTxType
@@ -583,6 +597,17 @@ uint8_t Display::lineHeight = Display::font->height + lineSpace;
 //static
 uint8_t Display::screenMap[display_width * display_height / 8];
 
+#ifdef WITH_DISPL_VFLIP
+// bits reverse lookup table; macro generator by Hallvard Furuseth
+//static
+const unsigned char Display::u8Reverse[256] =
+{
+#   define R2(n)     n,     n + 2*64,     n + 1*64,     n + 3*64
+#   define R4(n) R2(n), R2(n + 2*16), R2(n + 1*16), R2(n + 3*16)
+#   define R6(n) R4(n), R4(n + 2*4 ), R4(n + 1*4 ), R4(n + 3*4 )
+    R6(0), R6(2), R6(1), R6(3)
+};
+#endif
 
 //------------------------------------------------------------------------------
 

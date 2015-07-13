@@ -15,6 +15,7 @@ TCHAIN = arm-none-eabi
 # knob ... user knob to set volume and options
 # buttons ... controls buttons (for display menu e.g., sound volume etc.)
 # lcd5110 ... 84x48 LCD with PCD8544 controller (uses SPI2 CLK & MOSI)
+# displvflip ... vertically flip display screen
 
 WITH_OPTS = bmp180 beeper
 
@@ -95,6 +96,10 @@ ifneq ($(findstring lcd5110,$(WITH_OPTS)),)
   INCDIR += -Ilcd
   C_SRC  += lcd/bmpfonts.cpp
   C_SRC  += lcd/lcd5110.cpp
+endif
+
+ifneq ($(findstring displvflip,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_DISPL_VFLIP
 endif
 
 ifneq ($(findstring buttons,$(WITH_OPTS)),)
