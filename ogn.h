@@ -26,52 +26,56 @@ class OGN_Packet          // Packet structure for the OGN tracker
 { public:
 
   union
-  { uint32_t Word[7];
-    uint8_t  Byte[26];
+  { uint32_t Word[7];     // OGN packet as 32-bit words
+    uint8_t  Byte[26];    // OGN packet as  8-bit bytes
 
-    struct
-   { uint32_t Header;     //    ECRR PMTT AAAA AAAA AAAA AAAA AAAA AAAA
-                          // E=Emergency, C=enCrypt/Custom, RR=Relay count, P=Parity, M=isMeteo/Telemetry, TT=address Type, AA..=Address:24-bit
-                          // When enCrypt/Custom is set the data (position or whatever) can only be decoded by the owner
-                          // This option is indented to pass any type of custom data not foreseen otheriwse
+    struct                // OGN packet as Header+Position+FEC
+    { uint32_t Header;     //    ECRR PMTT AAAA AAAA AAAA AAAA AAAA AAAA
+                           // E=Emergency, C=enCrypt/Custom, RR=Relay count, P=Parity, M=isMeteo/Telemetry, TT=address Type, AA..=Address:24-bit
+                           // When enCrypt/Custom is set the data (position or whatever) can only be decoded by the owner
+                           // This option is indented to pass any type of custom data not foreseen otheriwse
 
-     uint32_t Position[4];// 0: QQTT TTTT LLLL LLLL LLLL LLLL LLLL LLLL  QQ=fix Quality:2, TTTTTT=time:6, LL..=Latitude:20
-                          // 1: MBDD DDDD LLLL LLLL LLLL LLLL LLLL LLLL  F=fixMode:1 B=isBaro:1, DDDDDD=DOP:6, LL..=Longitude:20
-                          // 2: RRRR RRRR SSSS SSSS SSAA AAAA AAAA AAAA  RR..=turn Rate:8, SS..=Speed:10, AA..=Alt:14
-                          // 3: XXXX XXXX YYYY PCCC CCCC CCDD DDDD DDDD  XX..=spare:8, YYYY=AcftType:4, P=Stealth:1, CC..=Climb:9, DD..=Heading:10
+      uint32_t Position[4];// 0: QQTT TTTT LLLL LLLL LLLL LLLL LLLL LLLL  QQ=fix Quality:2, TTTTTT=time:6, LL..=Latitude:20
+                           // 1: MBDD DDDD LLLL LLLL LLLL LLLL LLLL LLLL  F=fixMode:1 B=isBaro:1, DDDDDD=DOP:6, LL..=Longitude:20
+                           // 2: RRRR RRRR SSSS SSSS SSAA AAAA AAAA AAAA  RR..=turn Rate:8, SS..=Speed:10, AA..=Alt:14
+                           // 3: XXXX XXXX YYYY PCCC CCCC CCDD DDDD DDDD  XX..=spare:8, YYYY=AcftType:4, P=Stealth:1, CC..=Climb:9, DD..=Heading:10
 
-                          // meteo/telemetry types: Meteo conditions, Thermal wind/climb, Device telemetry, Precise time, 
+                           // meteo/telemetry types: Meteo conditions, Thermal wind/climb, Device telemetry, Precise time, 
 
-                          // meteo report would transmit: Humidity, Barometric pressure, Temperature, wind Speed/Direction                          
-                          // 2: HHHH HHHH SSSS SSSS SSAA AAAA AAAA AAAA
-                          // 3: TTTT TTTT YYYY BBBB BBBB BBDD DDDD DDDD  YYYY = report tYpe (meteo, thermal, water level, other telemetry)
-     uint32_t FEC[2];     // Gallager code: 48 check bits for 160 user bits
-   } ;
+                           // meteo report would transmit: Humidity, Barometric pressure, Temperature, wind Speed/Direction                          
+                           // 2: HHHH HHHH SSSS SSSS SSAA AAAA AAAA AAAA
+                           // 3: TTTT TTTT YYYY BBBB BBBB BBDD DDDD DDDD  YYYY = report tYpe (meteo, thermal, water level, other telemetry)
+      uint32_t FEC[2];     // Gallager code: 48 check bits for 160 user bits
+    } ;
   } ;
 
    uint8_t State;         // 
    uint8_t RxRSSI;        // [-0.5dBm]
-    int8_t RxFreqOfs;     // 
-   uint8_t RxErr;
+    int8_t RxFreqOfs;     // not used for now
+   uint8_t RxErr;         // number of bit errors corrected upon reception
 
 // union
 // { uint32_t FEC[2];       // Gallager code: 48 check bits for 160 user bits
 //   uint8_t  State[8];     // last two bytes are not used by the FEC
 // } ;
-                          // here we make use of the last two bytes
-   void   clrReady(void)       {        State &= 0xFE; }
+//                          // here we make use of the last two bytes
+
+   void   clrReady(void)       {        State &= 0xFE; } // is ready for transmission
    void   setReady(void)       {        State |= 0x01; }
    uint8_t isReady(void) const { return State &  0x01; }
 
-   void   clrSent(void)        {        State &= 0xFD; }
+   void   clrSent(void)        {        State &= 0xFD; } // has already been sent out
    void   setSent(void)        {        State |= 0x02; }
    uint8_t isSent(void)  const { return State &  0x02; }
 
-   void   clrAlloc(void)       {        State &= 0x7F; }
+   void   clrAlloc(void)       {        State &= 0x7F; } // not empty / is being used (when in a pipe)
    void   setAlloc(void)       {        State |= 0x80; }
    uint8_t isAlloc(void) const { return State &  0x80; }
 
-   int sendBytes(uint8_t *Packet) const             // make the bytes to be sent out in the RF packet
+   void recvBytes(const uint8_t *Packet) { memcpy(Byte, Packet, 26); }
+
+/*
+   int sendBytes(uint8_t *Packet) const                  // make the bytes to be sent out in the RF packet
    { int ByteIdx=0; const uint32_t *WordPtr=&Header;
      for(int WordIdx=0; WordIdx<7; WordIdx++)
      { uint32_t Word=WordPtr[WordIdx];
@@ -81,7 +85,7 @@ class OGN_Packet          // Packet structure for the OGN tracker
      }
      return 26; }
 
-   int recvBytes(const uint8_t *Packet)             // get bytes from an RF packet and make the OGN_Packet
+   int recvBytes(const uint8_t *Packet)                   // get bytes from an RF packet and make the OGN_Packet
    { int ByteIdx=0; uint32_t *WordPtr=&Header;
      for(int WordIdx=0; WordIdx<7; WordIdx++)
      { uint32_t Word=0;
@@ -91,13 +95,14 @@ class OGN_Packet          // Packet structure for the OGN tracker
        WordPtr[WordIdx]=Word;
      }
      return 26; }
+*/
 
 #ifdef __AVR__
 
 #endif
 
 #ifndef __AVR__
-   int calcErrorPattern(uint8_t *ErrPatt, const uint8_t *Packet)
+   uint8_t calcErrorPattern(uint8_t *ErrPatt, const uint8_t *Packet)
    { uint8_t ByteIdx=0; uint32_t *WordPtr=&Header;
      for(uint8_t WordIdx=0; WordIdx<7; WordIdx++)
      { uint32_t Word=WordPtr[WordIdx];
@@ -115,10 +120,9 @@ class OGN_Packet          // Packet structure for the OGN tracker
              (long int)FEC[1], (int)checkFEC() ); }
 
    void DumpBytes(void) const
-   { uint8_t Data[26]; sendBytes(Data);
-     for(int Idx=0; Idx<26; Idx++)
-     { printf(" %02X", Data[Idx]); }
-     printf(" (%d)\n", LDPC_Check(Data)); }
+   { for(uint8_t Idx=0; Idx<26; Idx++)
+     { printf(" %02X", Byte[Idx]); }
+     printf(" (%d)\n", LDPC_Check(Byte)); }
 
    void Print(void) const
    { printf("%06lX:%c R%c %c%X %c",
@@ -134,7 +138,6 @@ class OGN_Packet          // Packet structure for the OGN tracker
    uint8_t WriteNMEA(char *NMEA)
    { uint8_t Len=0;
      Len+=Format_String(NMEA+Len, "$POGNT,");
-     // memcpy(NMEA+Len, "$POGNT,", 7); Len+=7;
      Len+=Format_UnsDec(NMEA+Len, (uint16_t)getTime(), 2);
      NMEA[Len++]=',';
      NMEA[Len++]=HexDigit(getAcftType()); 
@@ -217,9 +220,11 @@ class OGN_Packet          // Packet structure for the OGN tracker
    OGN_Packet() { Clear(); }
    void Clear(void) { Header=0; Position[0]=0; Position[1]=0; Position[2]=0; Position[3]=0; }
 
-   void setFEC(void)                            { LDPC_Encode(&Header, FEC); }       // calculate the 48-bit parity check
-   void setFEC(const uint32_t ParityGen[48][5]) { LDPC_Encode(&Header, FEC, ParityGen); }
-   int8_t checkFEC(void)    const  { return LDPC_Check(&Header); } // returns number of parity checks that fail (0 => no errors, all fine)
+   // void calcFEC(void)                            { LDPC_Encode(&Header, FEC); }       // calculate the 48-bit parity check
+   // void calcFEC(const uint32_t ParityGen[48][5]) { LDPC_Encode(&Header, FEC, ParityGen); }
+
+   void calcFEC(void)                     { LDPC_Encode(Word); }       // calculate the 48-bit parity check
+   int8_t checkFEC(void)    const  { return LDPC_Check(Word); }        // returns number of parity checks that fail (0 => no errors, all fine)
    // void Whiten  (void) { TEA_Encrypt(Position, OGN_WhitenKey, 4); TEA_Encrypt(Position+2, OGN_WhitenKey, 4); } // whiten the position
    // void Dewhiten(void) { TEA_Decrypt(Position, OGN_WhitenKey, 4); TEA_Decrypt(Position+2, OGN_WhitenKey, 4); } // de-whiten the position
    void Whiten  (void) { TEA_Encrypt_Key0(Position, 8); TEA_Encrypt_Key0(Position+2, 8); } // whiten the position

@@ -137,7 +137,7 @@ static void GPS_BurstEnd(void)                                             // wh
         Position[PosIdx].Encode(Packet[PktIdx]);
         Packet[PktIdx].setStealth(Parameters.getStealth());
         Packet[PktIdx].setAcftType(Parameters.getAcftType());
-        Packet[PktIdx].Whiten(); Packet[PktIdx].setFEC(); Packet[PktIdx].setReady();
+        Packet[PktIdx].Whiten(); Packet[PktIdx].calcFEC(); Packet[PktIdx].setReady();
         OGN_Packet *PktPtr = &Packet[PktIdx];
         xQueueSend(xQueuePacket, &PktPtr, 10);                            // send the new packet to the RF task
         PktIdx^=1; LED_PCB_Flash(100);

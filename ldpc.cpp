@@ -282,11 +282,11 @@ void LDPC_Encode(const uint32_t *Data, uint32_t *Parity, const uint32_t ParityGe
   // printf(" => %08X %08X\n", Parity[0], Parity[1] );
 }
 
-void LDPC_Encode(const uint32_t *Data, uint32_t *Parity)
-{ LDPC_Encode(Data, Parity, LDPC_ParityGen); }
+void LDPC_Encode(const uint32_t *Data, uint32_t *Parity) { LDPC_Encode(Data, Parity, LDPC_ParityGen); }
+void LDPC_Encode(      uint32_t *Data)                   { LDPC_Encode(Data, Data+5, LDPC_ParityGen); }
 
 // check Data against Parity (run 48 parity checks) - return number of failed checks
-int LDPC_Check(const uint32_t *Data, const uint32_t *Parity) // Data and Parity are 32-bit words
+int8_t LDPC_Check(const uint32_t *Data, const uint32_t *Parity) // Data and Parity are 32-bit words
 { int Errors=0;
   for(int Row=0; Row<48; Row++)
   { int Count=0;
@@ -299,21 +299,8 @@ int LDPC_Check(const uint32_t *Data, const uint32_t *Parity) // Data and Parity 
     if(Count&1) Errors++; }
   return Errors; }
 
-int LDPC_Check(const uint32_t *Packet) { return LDPC_Check(Packet, Packet+5); }
-/*
-int LDPC_Check(const uint8_t *Data) // Data and Parity are 8-bit bytes
-{ int Errors=0;
-  for(int Row=0; Row<48; Row++)
-  { int Count=0;
-    const uint32_t *Check=LDPC_ParityCheck[Row];
-    uint32_t ParityWord = 0;
-    for(int Idx=0; Idx<26; Idx++)
-    { if((Idx&3)==0) { ParityWord = *Check++; }
-      uint8_t And=Data[Idx]&ParityWord; Count+=Count1s(And);
-      ParityWord>>=8; }
-    if(Count&1) Errors++; }
-  return Errors; }
-*/
+int8_t LDPC_Check(const uint32_t *Data) { return LDPC_Check(Data, Data+5); }
+
 int8_t LDPC_Check(const uint8_t *Data) // 20 data bytes followed by 6 parity bytes
 { uint8_t Errors=0;
   for(uint8_t Row=0; Row<48; Row++)

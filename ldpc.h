@@ -25,25 +25,25 @@ void LDPC_Encode(const uint32_t *Data, uint32_t *Parity);
 // encode Parity from Data: Data is 20 bytes = 160 bits, Parity is 6 bytes = 48 bits
 void LDPC_Encode(const uint8_t *Data, uint8_t *Parity, const uint32_t ParityGen[48][5]);
 void LDPC_Encode(const uint8_t *Data, uint8_t *Parity);
-void LDPC_Encode(uint8_t *Data);
-                                        // check Data against Parity (run 48 parity checks) - return number of failed checks
-int8_t LDPC_Check(const uint8_t *Data); // 20 data bytes followed by 6 parity bytes
+void LDPC_Encode(      uint8_t *Data);
+                                         // check Data against Parity (run 48 parity checks) - return number of failed checks
+int8_t LDPC_Check(const uint8_t  *Data); // 20 data bytes followed by 6 parity bytes
 int8_t LDPC_Check(const uint32_t *Packet);
 
 #else // if not 8-bit AVR
 
 void LDPC_Encode(const uint8_t *Data, uint8_t *Parity, const uint32_t ParityGen[48][5]);
 void LDPC_Encode(const uint8_t *Data, uint8_t *Parity);
-void LDPC_Encode(uint8_t *Data);
-                                                              // encode Parity from Data: Data is 5x 32-bit words = 160 bits, Parity is 1.5x 32-bit word = 48 bits
+void LDPC_Encode(      uint8_t *Data);
+                                                                 // encode Parity from Data: Data is 5x 32-bit words = 160 bits, Parity is 1.5x 32-bit word = 48 bits
 void LDPC_Encode(const uint32_t *Data, uint32_t *Parity, const uint32_t ParityGen[48][5]);
 void LDPC_Encode(const uint32_t *Data, uint32_t *Parity);
-                                                              // check Data against Parity (run 48 parity checks) - return number of failed checks
-int LDPC_Check(const uint32_t *Data, const uint32_t *Parity); // Data and Parity are 32-bit words
-int LDPC_Check(const uint32_t *Packet);
-// int LDPC_Check(const uint8_t *Data); // Data and Parity are 8-bit bytes
-int8_t LDPC_Check(const uint8_t *Data); // 20 data bytes followed by 6 parity bytes
-  
+void LDPC_Encode(      uint32_t *Data);
+                                                                 // check Data against Parity (run 48 parity checks) - return number of failed checks
+int8_t LDPC_Check(const uint32_t *Data, const uint32_t *Parity); // Data and Parity are 32-bit words
+int8_t LDPC_Check(const uint32_t *Data);
+int8_t LDPC_Check(const uint8_t  *Data);                         // 20 data bytes followed by 6 parity bytes
+
 #endif // __AVR__
 
 #ifndef __AVR__

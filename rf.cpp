@@ -103,11 +103,11 @@ static int32_t RX_RssiUpp=0;      // [-0.5dBm]
 
 static char Line[88];
 
-static uint8_t Receive(void)                                   // see if a packet has arrived
+static uint8_t Receive(void)                                 // see if a packet has arrived
 { if(!TRX.DIO0_isOn()) return 0;
 
 #ifdef WITH_BEEPER
-                                                               // if a new packet has been received
+                                                             // if a new packet has been received
   if(KNOB_Tick) Play(0x69, 3);
 #endif
 
