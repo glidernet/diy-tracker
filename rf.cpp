@@ -62,6 +62,7 @@ void RFM69_GPIO_Configuration(void)
 
   GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_3 | GPIO_Pin_4;    // PB4 = DIO0 and PB3 = DIO4 of RFM69
   GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_IN_FLOATING;
+  // GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_IPU;
   GPIO_Init(GPIOB, &GPIO_InitStructure);
 
   GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_5;                // PB5 = RESET (active high)
@@ -206,13 +207,14 @@ static uint8_t Transmit(const uint8_t *PacketPtr, uint8_t Thresh, int MaxWait=7)
 
   return 1; }
 
-static void StartRFchip(void)
+static uint8_t StartRFchip(void)
 { TRX.RESET_On();
   vTaskDelay(10);
   TRX.RESET_Off();
   vTaskDelay(10);
   TRX.Configure(LowFreq, OGN_SYNC);
-  TRX.WriteMode(RFM69_OPMODE_STDBY); }
+  TRX.WriteMode(RFM69_OPMODE_STDBY);
+  return TRX.ReadVersion(); }
 
 #ifdef __cplusplus
   extern "C"
@@ -236,14 +238,18 @@ void vTaskRF(void* pvParameters)
   // RFM69_GPIO_Configuration();
   // ADC_Configuration();
 
-  StartRFchip();
+  for( ; ; )
+  { uint8_t ChipVersion = StartRFchip();
 
-  uint8_t ChipVersion=TRX.ReadVersion();
-  xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
-  Format_String(UART1_Write, "TaskRF: ");
-  UART1_Write('v'); Format_Hex(UART1_Write, ChipVersion);
-  UART1_Write('\r'); UART1_Write('\n');
-  xSemaphoreGive(UART1_Mutex);
+    xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
+    Format_String(UART1_Write, "TaskRF: ");
+    UART1_Write('v'); Format_Hex(UART1_Write, ChipVersion);
+    UART1_Write('\r'); UART1_Write('\n');
+    xSemaphoreGive(UART1_Mutex);
+
+    if( (ChipVersion!=0x00) && (ChipVersion!=0xFF) ) break;
+    vTaskDelay(1000);
+  }
 
   TX_Credit =  0;
   RX_Packets = 0;    // count received packets per every second (two time slots)

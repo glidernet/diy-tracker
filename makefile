@@ -14,7 +14,7 @@ TCHAIN = arm-none-eabi
 # beeper ... beeper (vario etc)
 # knob ... user knob to set volume and options
 
-WITH_OPTS = bmp180 beeper
+WITH_OPTS = beeper
 
 MCU = STM32F103C8  # STM32F103C8 for no-name STM32F1 board, STM32F103CB for Maple mini
 

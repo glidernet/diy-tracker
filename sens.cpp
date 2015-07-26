@@ -27,7 +27,7 @@ static const uint16_t VarioBasePeriod = 800;  // [ms]
 #ifdef WITH_BEEPER
 void VarioSound(int32_t ClimbRate)
 {
-  uint8_t VarioVolume = KNOB_Tick>>1; if(VarioVolume>3) VarioVolume=3;     // take vario volume from the user knob
+  uint8_t VarioVolume = KNOB_Tick>>1; if(VarioVolume>3) VarioVolume=3;  // take vario volume from the user knob
   if(ClimbRate>=50)                                                     // if climb > 1/2 m/s
   { uint8_t Note=(ClimbRate-50)/50;                                     // one semitone per 1/2 m/s
     if(Note>=0x0F) Note=0x0F;                                           // stop at 15 thus 8 m/s
@@ -60,6 +60,11 @@ static char Line[64];                       // line to prepare the barometer NME
 
 static bool InitBaro()
 {
+
+// #ifdef WITH_BEEPER
+//   VarioSound(0);
+// #endif
+
   Baro.Bus=I2C1;
   BaroPipe.Clear(90000);
   BaroNoise.Set(3*16);                 // guess the pressure noise level
@@ -152,7 +157,7 @@ static void ProcBaro()
 
 extern "C"
 void vTaskSENS(void* pvParameters)
-{ vTaskDelay(10);
+{ vTaskDelay(20);   // this delay seems to be essential - if you don't wait long enough, the BMP180 won't respond properly.
 
 #ifdef WITH_BMP180
   bool withBaro = InitBaro();

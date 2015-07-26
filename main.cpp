@@ -80,8 +80,8 @@ FlashParameters Parameters; // parameters to be stored in Flash, on the last pag
 // RF  <- SPI1.SS   PA 4     PB 4           <- RF.DIO0
 // RF  <- SPI1.SCK  PA 5     PB 3           <- RF.DIO4
 // RF  -> SPI1.MISO PA 6     PA15
-// RF  <- SPI1.MOSI PA 7     PA12 TIM1.ETR
-// POT -> TIM3.CH3  PB 0     PA11 TIM1.CH4
+// RF  <- SPI1.MOSI PA 7     PA12 TIM1.ETR <-> USB
+// POT -> TIM3.CH3  PB 0     PA11 TIM1.CH4 <-> USB
 //        TIM3.CH4  PB 1     PA10 USART1.Rx <- Console/BT
 //     <- USART3.Tx PB10     PA 9 USART1.Tx -> Console/BT
 //     -> USART3.Rx PB11     PA 8 TIM1.CH1
@@ -269,7 +269,7 @@ void SysTick_Handler(void) { xPortSysTickHandler(); }
 
 #ifdef WITH_BEEPER
 
-uint8_t  Vario_Note=0x40;
+uint8_t  Vario_Note=0x00; // 0x40;
 uint16_t Vario_Period=800;
 uint16_t Vario_Fill=50;
 
@@ -402,61 +402,77 @@ int main(void)
 // lot of things to do:
 // + read NMEA user input
 // . set Parameters in Flash from NMEA
+//
 // + send received positions to console
 // + send received positions to console as $POGNT
 // + print number of detected transmission errors
 // . avoid printing same position twice (from both time slots)
 // + send Rx noise and packet stat. as $POGNR
+//
 // . optimize receiver sensitivity
 // . use RF chip AFC or not ?
 // . user RF chip continues AGC/RSSI or not ?
 // + periodically refresh the RF chip config (after 60 seconds of Rx inactivity)
+//
 // . packet pools for queing
 // . separate task for FEC correction
 // . separate task for RX processing (retransmission decision)
 // . good packets go to RX, bad packets go to FEC first
 // . packet retransmission and strategy
+//
 // + queue for sounds to be played on the buzzer
 // + separate the UART code
+//
 // + use watchdog to restart in case of a hangup
 // + print heap and task information when Ctlr-C pressed on the console
 // . try to run on Maple Mini (there is more Flash, but visibly no xtal)
+//
 // + SD card slot and FatFS
 // + simple log system onto SD
 // + regular log close and auto-resume when card inserted
 // . IGC log
+//
 // . auto-detect RFM69W or RFM69HW - possible at all ?
 // + read RF chip temperature
 // . compensate Rx/Tx frequency by RF chip temperature
+//
 // . measure the CPU temperature
 // . measure VCC voltage: low battery indicator
 // + resolve unstable ADC readout
+//
 // . detect when VK16u6 GPS fails below 2.7V supply
 // . audible alert when GPS fails or absent ?
 // . GPS: set higher baud rates
 // . GPS: auto-baud
+// + GPS: keep functioning when GPGSA is not there
 // . check for loss of GPS data and declare fix loss
 // + keep/count time (from GPS)
+//
 // + connect BMP180 pressure sensor
 // . pressure sensor correction in Flash parameters ?
 // . support MS5611 pressure sensor
 // + correlate pressure and GPS altitude
 // . resolve extra dummy byte transfer for I2C_Read()
+// . recover from I2C hang-up
 // + send pressure data in $POGNB
 // + vario sound
 // + adapt vario integration time to link/sink
 // + separate task for BMP180 and other I2C sensors
 // . send standard/pressure altitude in the packet ?
 // . when measuring pressure avoid times when TX or LOG is active to reduce noise ?
+//
 // . stop transmission 60 sec after GPS lock is lost ?
 // . audible alert when RF chip fails ?
 // + all hardware configure to main() before tasks start ?
+//
 // + objective code for RF chip
 // . CC1101/CC1120/SPIRIT1 code
 // . properly handle TX position when GPS looses lock
 // . NMEA commands to make sounds on the speaker
+//
 // + use TIM4.CH4 to drive the buzzer with double voltage
 // . read compass, gyro, accel.
+//
 // + int math into a single file
 // + bitcount: option to save flash storage: reduce lookup table from 256 to 16 bytes
 // . thermal circling detection

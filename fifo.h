@@ -58,4 +58,31 @@ template <class Type, const uint8_t Size=8> // size must be (!) a power of 2 lik
 */
 } ;
 
+template <class Type, const uint8_t Size=8> // size must be (!) a power of 2 like 4, 8, 16, 32, etc.
+ class Delay
+{ public:
+   static const uint8_t Len = Size;
+   static const uint8_t PtrMask = Size-1;
+
+   Type Data[Len];
+   uint8_t Ptr;
+
+  public:
+   void Clear(Type Zero=0)
+   { for(uint8_t Idx=0; Idx<Len; Idx++)
+       Data[Idx]=Zero;
+     Ptr=0; }
+
+   Type Process(Type Inp)
+   { Ptr--; Ptr&=PtrMask; 
+     Type Out=Data[Ptr];
+     Data[Ptr]=Inp;
+     return Out; }
+
+   Type & operator[](uint8_t Idx)
+   { Idx = Ptr-Idx; Idx&=PtrMask;
+     return Data[Idx]; }
+
+} ;
+
 #endif // __FIFO_H__

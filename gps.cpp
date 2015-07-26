@@ -159,7 +159,7 @@ static void GPS_BurstEnd(void)                                             // wh
 static void GPS_NMEA(void)                                                 // when GPS gets a correct NMEA sentence
 { LED_PCB_Flash(2);                                                        // Flash the LED for 2 ms
   Position[PosIdx].ReadNMEA(NMEA);                                         // read position elements from NMEA
-  if( NMEA.isGPRMC() || NMEA.isGPGGA() )
+  if( NMEA.isGPRMC() || NMEA.isGPGGA() || NMEA.isGPTXT() )
   { static char CRNL[3] = "\r\n";
     LogLine((char *)NMEA.Data);
     LogLine(CRNL);

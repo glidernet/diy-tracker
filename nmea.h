@@ -110,6 +110,12 @@ inline uint8_t NMEA_AppendCheckCRNL(char *NMEA, uint8_t Len) { return NMEA_Appen
        if(Data[4]!='S') return 0;
        return Data[5]=='A'; }
 
+   uint8_t isGPTXT(void) const                   // GPS satellite data
+     { if(!isGPS()) return 0;
+       if(Data[3]!='T') return 0;
+       if(Data[4]!='X') return 0;
+       return Data[5]=='T'; }
+
    uint8_t isPOGN(void) const                    // OGN dedicated NMEA sentence
      { if(Data[1]!='P') return 0;
        if(Data[2]!='O') return 0;

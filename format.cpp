@@ -142,3 +142,6 @@ uint8_t Format_Hex( char *Output, uint32_t Word, uint8_t Digits)
      int16_t Low =Read_Dec2(Inp+2); if(Low<0) return -1;
      return Low + (int16_t)100*(int16_t)High; }
 
+//   int32_t Read_UnsDec(const char *Inp)
+//   { int32_t 
+//   }

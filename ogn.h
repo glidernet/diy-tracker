@@ -525,22 +525,22 @@ class OgnPosition
    { if((Flags&0x01)==0) return 0;
      return 1; }
 
-   bool isTimeValid(void) const
+   bool isTimeValid(void) const                      // is the GPS time-of-day valid ?
    { return (Hour>=0) && (Min>=0) && (Sec>=0); }
 
-   bool isDateValid(void) const
+   bool isDateValid(void) const                      // is the GPS date valid ?
    { return (Year>=0) && (Month>=0) && (Day>=0); }
 
-   bool isValid(void)                                // is GPS lock there ?
+   bool isValid(void) const                          // is GPS lock there ?
    { if(!isTimeValid()) return 0;
      if(!isDateValid()) return 0;
      if(FixQuality==0) return 0;
-     if(FixMode<2) return 0;
+     if(FixMode==1) return 0;                        // if GSA says "no lock" (when GSA is not there, FixMode=0)
      if(Satellites<=0) return 0;
      return 1; }
 
 #ifndef __AVR__ // there is not printf() with AVR
-   void PrintDateTime(void) const { printf("%02d.%02d.%04d %02d:%02d:%05.2f", Day, Month, Year, Hour, Min, Sec+0.01*FracSec ); }
+   void PrintDateTime(void) const { printf("%02d.%02d.%04d %02d:%02d:%05.2f", Day, Month, 2000+Year, Hour, Min, Sec+0.01*FracSec ); }
    void PrintTime(void)     const { printf("%02d:%02d:%05.2f", Hour, Min, Sec+0.01*FracSec ); }
 
    int PrintDateTime(char *Out) const { return sprintf(Out, "%02d.%02d.%04d %02d:%02d:%02d.%02d", Day, Month, Year, Hour, Min, Sec, FracSec ); }
@@ -602,8 +602,10 @@ class OgnPosition
    int8_t ReadGGA(NMEA_RxMsg &RxMsg)
    { if(RxMsg.Parms<14) return -1;                                                        // no less than 14 paramaters
      if(ReadTime((const char *)RxMsg.ParmPtr(0))>0) Flags|=0x01; else Flags&=0xFE;
-     FixQuality =Read_Dec1(*RxMsg.ParmPtr(5)); if(FixQuality<0) FixQuality=0;              // fix quality
-     Satellites=Read_Dec2((const char *)RxMsg.ParmPtr(6)); if(Satellites<0) Satellites=0;  // number of satellites
+     FixQuality =Read_Dec1(*RxMsg.ParmPtr(5)); if(FixQuality<0) FixQuality=0;             // fix quality
+     Satellites=Read_Dec2((const char *)RxMsg.ParmPtr(6));                                // number of satellites
+     if(Satellites<0) Satellites=Read_Dec1(RxMsg.ParmPtr(6)[0]); 
+     if(Satellites<0) Satellites=0;
      ReadHDOP((const char *)RxMsg.ParmPtr(7));                                            // horizontal dilution of precision
      ReadLatitude(*RxMsg.ParmPtr(2), (const char *)RxMsg.ParmPtr(1));                     // Latitude
      ReadLongitude(*RxMsg.ParmPtr(4), (const char *)RxMsg.ParmPtr(3));                    // Longitude
@@ -615,8 +617,10 @@ class OgnPosition
    { if(memcmp(GGA, "$GPGGA", 6)!=0) return -1;                                           // check if the right sequence
      uint8_t Index[20]; if(IndexNMEA(Index, GGA)<14) return -2;                           // index parameters and check the sum
      if(ReadTime(GGA+Index[0])>0) Flags|=0x01; else Flags&=0xFE;
-     FixQuality =Read_Dec1(GGA[Index[5]]); if(FixQuality<0) FixQuality=0;                  // fix quality
-     Satellites=Read_Dec2(GGA+Index[6]); if(Satellites<0) Satellites=0;                    // number of satellites
+     FixQuality =Read_Dec1(GGA[Index[5]]); if(FixQuality<0) FixQuality=0;                 // fix quality
+     Satellites=Read_Dec2(GGA+Index[6]);                                                  // number of satellites
+     if(Satellites<0) Satellites=Read_Dec1(GGA[Index[6]]);
+     if(Satellites<0) Satellites=0;
      ReadHDOP(GGA+Index[7]);                                                              // horizontal dilution of precision
      ReadLatitude( GGA[Index[2]], GGA+Index[1]);                                          // Latitude
      ReadLongitude(GGA[Index[4]], GGA+Index[3]);                                          // Longitude
@@ -675,10 +679,10 @@ class OgnPosition
 
    int8_t Encode(OGN_Packet &Packet) const
    { Packet.setFixQuality(FixQuality<3 ? FixQuality:3);
-     if((FixQuality>0)&&(FixMode>1)) Packet.setFixMode(FixMode-2);
-                                else Packet.setFixMode(0);
-     if(PDOP>0) Packet.EncodeDOP(PDOP-10);
-           else Packet.EncodeDOP(HDOP-10);
+     if((FixQuality>0)&&(FixMode>=2)) Packet.setFixMode(FixMode-2);
+                                 else Packet.setFixMode(0);
+     if(PDOP>0) Packet.EncodeDOP(PDOP-10);                              // encode PDOP from GSA
+           else Packet.EncodeDOP(HDOP-10);                              // or if no GSA: use HDOP
      int ShortTime=Sec;
      if(FracSec>=50) { ShortTime+=1; if(ShortTime>=60) ShortTime-=60; }
      Packet.setTime(ShortTime);
@@ -787,8 +791,8 @@ class OgnPosition
        Check^=ch;
        if(ch==',') { Index[Params++]=Ptr; }
      }
-     if(Seq[Ptr++]!=HexDigit(Check>>4)) return -2;
-     if(Seq[Ptr++]!=HexDigit(Check)) return -2;
+     if(Seq[Ptr++]!=HexDigit(Check>>4)  ) { /* printf("H:%c:%c <=> %02X\n", Seq[Ptr-1],Seq[Ptr  ], Check); */ return -2; }
+     if(Seq[Ptr++]!=HexDigit(Check&0x0F)) { /* printf("L:%c:%c <=> %02X\n", Seq[Ptr-2],Seq[Ptr-1], Check); */ return -2; }
      // printf("%s => [%d]\n", Seq, Params);
      return Params; }
 
