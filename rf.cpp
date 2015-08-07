@@ -88,7 +88,9 @@ static RFM69             TRX;    // radio transceiver
 
 static uint8_t RxPktData[26];    // received packet data
 static uint8_t RxPktErr [26];    // received packet error pattern
-static OGN_Packet  RxPacket;     // received packet
+
+static OGN_PrioQueue RelayQueue; // received packets and candidates to be relayed
+static OGN_Packet   RelayPacket; // received packet to be re-transmitted
 static LDPC_Decoder Decoder;     // error corrector for the Gallager code
 
 static uint8_t TX_FreqChan=0;     // 0 = 868.2MHz, 1 = 868.4MHz
@@ -96,8 +98,8 @@ static uint8_t TX_Credit  =0;     // counts transmitted packets vs. time to avoi
 
 static uint8_t RX_Packets=0;      // [packets] counts received packets
 static uint8_t RX_Idle   =0;      // [sec]     time the receiver did not get any packets
-static int32_t RX_RssiLow=0;      // [-0.5dBm] background noise level on two frequencies
-static int32_t RX_RssiUpp=0;      // [-0.5dBm]
+static int32_t RX_RssiLow=0;      // [-0.5dBm] background noise level on lower RF channel
+static int32_t RX_RssiUpp=0;      // [-0.5dBm] background noise level on upper RF channel
 
       uint32_t RX_Random=0x12345678; // Random number from LSB of RSSI readouts
 
@@ -108,44 +110,50 @@ static uint8_t Receive(void)                                 // see if a packet 
 
 #ifdef WITH_BEEPER
                                                              // if a new packet has been received
-  if(KNOB_Tick) Play(0x69, 3);
+  if(KNOB_Tick>12) Play(0x69, 3);                            // if Knob>12 => make a beep for every received packet
 #endif
 
+  uint8_t RxPacketIdx  = RelayQueue.getNew();
+  OGN_Packet *RxPacket = RelayQueue[RxPacketIdx];
+
   uint8_t RxRSSI = TRX.ReadRSSI();                           // signal strength for the received packet
-  RxPacket.RxRSSI=RxRSSI;
+  RX_Random = (RX_Random<<1) | (RxRSSI&1);
+  RxPacket->RxRSSI=RxRSSI;
 
   TRX.ReadPacket(RxPktData, RxPktErr);                       // get the packet data from the FIFO
   RX_Packets++;
   uint8_t Check=LDPC_Check(RxPktData);
 
   // taskYIELD();
-  RxPacket.RxErr=0;
-  if(Check==0)
-  { RxPacket.recvBytes(RxPktData); }
-  else                                                         // if errors detected
-  { Decoder.Input(RxPktData, RxPktErr);
-    for(uint8_t Iter=24; Iter; Iter--)                         // more loops i smore chance to recover the packet
-    { Check=Decoder.ProcessChecks();                           // but it takes time
-      if(Check==0) break; }
-    if(Check==0)
-    { Decoder.Output(&RxPacket.Header);
+  RxPacket->RxErr=0;
+  if(Check==0)                                                 // if FEC is all fine
+  { RxPacket->recvBytes(RxPktData); }                          // copy received data directly into the RxPacket
+  else                                                         // if errors detected:
+  { Decoder.Input(RxPktData, RxPktErr);                        // put data into the FEC decoder
+    for(uint8_t Iter=24; Iter; Iter--)                         // more loops is more chance to recover the packet
+    { Check=Decoder.ProcessChecks();                           // do an iteration
+      if(Check==0) break; }                                    // if FEC all fine: break
+    if(Check==0)                                               // if FEC all fine after correction:
+    { Decoder.Output(RxPacket->Word);                          // put corrected data into the RxPacket
       uint8_t Count=0;
       for(uint8_t Idx=0; Idx<26; Idx++)                        // count detected manchester errors
         Count+=Count1s(RxPktErr[Idx]);
-      const uint8_t *Corr = (const uint8_t *)&RxPacket.Header;
-      for(uint8_t Idx=0; Idx<26; Idx++)
+      const uint8_t *Corr = RxPacket->Byte;                    // pointer to corrected data
+      for(uint8_t Idx=0; Idx<26; Idx++)                        // count bit errors in the data
         Count+=Count1s((uint8_t)((RxPktData[Idx]^Corr[Idx])&(~RxPktErr[Idx])));
-      RxPacket.RxErr=Count;
+      RxPacket->RxErr=Count;
     }
   }
 
   // taskYIELD();
   if(Check==0)
-  { if(RxPacket.isOther())
+  { if(RxPacket->isOther())
     { }
     else
-    { RxPacket.Dewhiten();
-      uint8_t Len=RxPacket.WriteNMEA(Line);
+    { RxPacket->Dewhiten();
+      RxPacket->calcRelayRank(GPS_Altitude);
+      RelayQueue.addNew(RxPacketIdx);
+      uint8_t Len=RxPacket->WriteNMEA(Line);
       xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
       Format_String(UART1_Write, Line, Len);
       xSemaphoreGive(UART1_Mutex);
@@ -165,8 +173,8 @@ static uint8_t Receive(void)                                 // see if a packet 
 
   return 1; }
 
-static uint8_t Receive(int Ticks)                                        // keep receiving packets for given period of time
-{ uint8_t Count=0; int Delta=0;
+static uint32_t Receive(uint32_t Ticks)                          // keep receiving packets for given period of time
+{ uint32_t Count=0; uint32_t Delta=0;
   TickType_t Start=xTaskGetTickCount();
   do
   { Count+=Receive(); vTaskDelay(1);
@@ -174,14 +182,15 @@ static uint8_t Receive(int Ticks)                                        // keep
   } while(Delta<Ticks);
   return Count; }
 
-static uint8_t Transmit(const uint8_t *PacketPtr, uint8_t Thresh, int MaxWait=7)
+static uint8_t Transmit(const uint8_t *PacketByte, uint8_t Thresh, uint8_t MaxWait=7)
 {
-  if(PacketPtr==0) return 0;
+  if(PacketByte==0) return 0;
 
   for( ; MaxWait; MaxWait--)
   { TRX.TriggerRSSI();
     vTaskDelay(1);
     uint8_t RxRSSI=TRX.ReadRSSI();
+    RX_Random = (RX_Random<<1) | (RxRSSI&1);
     if(RxRSSI>=Thresh) break; }
   if(MaxWait==0) return 0;
 
@@ -191,7 +200,7 @@ static uint8_t Transmit(const uint8_t *PacketPtr, uint8_t Thresh, int MaxWait=7)
   TRX.WriteTxPower(Parameters.getTxPower(), Parameters.isTxTypeHW()); // set TX for transmission
   TRX.WriteSYNC(8, 7, OGN_SYNC);                                // Full SYNC for TX
   TRX.ClearIrqFlags();
-  TRX.WritePacket(PacketPtr);                                   // write packet into FIFO
+  TRX.WritePacket(PacketByte);                                  // write packet into FIFO
   TRX.WriteMode(RFM69_OPMODE_TX);                               // transmit
   for(uint8_t MaxWait=10; MaxWait; MaxWait--)                   // wait for transmission to end
   { vTaskDelay(1);
@@ -206,6 +215,25 @@ static uint8_t Transmit(const uint8_t *PacketPtr, uint8_t Thresh, int MaxWait=7)
   TRX.WriteMode(RFM69_OPMODE_RX);                                // back to receive
 
   return 1; }
+
+static void GetRelayPacket(void)                                 // prepare a packet to be relayed
+{ RelayPacket.clrReady();
+  if(RelayQueue.Sum==0) return;
+  uint8_t Idx=RelayQueue.getRand(RX_Random);
+  if(RelayQueue.Packet[Idx].Rank==0) return;
+  RelayPacket = RelayQueue.Packet[Idx]; 
+  RelayPacket.incRelayCount();
+  RelayPacket.Whiten(); RelayPacket.calcFEC();
+  RelayPacket.setReady(); }
+
+static void TimeSlot(uint32_t Len, uint8_t *PacketByte, uint8_t Rx_RSSI, uint8_t MaxWait=8)
+{ Len-=MaxWait;
+  uint32_t TxTime = RX_Random%Len;                                         // when to transmit the packet
+  Receive(TxTime);                                                         // keep receiving until the transmit time
+  if( (TX_Credit) && (PacketByte) )
+  TX_Credit-=Transmit(PacketByte, RX_RssiLow, MaxWait);                      // attempt to transmit the packet
+  Receive(Len-TxTime);
+}
 
 static uint8_t StartRFchip(void)
 { TRX.RESET_On();
@@ -230,7 +258,7 @@ void vTaskRF(void* pvParameters)
   TRX.RESET_On     = RFM69_RESET_On;
   TRX.RESET_Off    = RFM69_RESET_Off;
 
-  uint8_t *PacketPtr = 0;
+  OGN_Packet CurrPosPacket;
 
   vTaskDelay(5);
 
@@ -251,7 +279,8 @@ void vTaskRF(void* pvParameters)
     vTaskDelay(1000);
   }
 
-  TX_Credit =  0;
+  CurrPosPacket.clrReady();
+  TX_Credit  = 0;
   RX_Packets = 0;    // count received packets per every second (two time slots)
   RX_Idle    = 0;    // count receiver idle time (slots without any packets received)
 
@@ -260,12 +289,37 @@ void vTaskRF(void* pvParameters)
   for( ; ; )
   {
 
-    while(uxQueueMessagesWaiting(xQueuePacket)>1)         // see for new packets to be sent
-    { xQueueReceive(xQueuePacket, &PacketPtr, 0); }
-    if(uxQueueMessagesWaiting(xQueuePacket)>0)
-    { xQueuePeek(xQueuePacket, &PacketPtr, 0); }
+    if(GPS_TimeSinceLock>2)                                                    // if GPS lock is already there for more than 2 seconds
+    { OgnPosition *Position = GPS_getPosition();                               // get the most recent valid GPS position
+      if(Position)                                                             //
+      { int8_t Sec=Position->Sec;
+        Sec-=2; if(Sec<0) Sec+=60;
+        OgnPosition *RefPos = GPS_getPosition(Sec);
+        if(RefPos)
+        { Position->calcDifferences(*RefPos);
+          CurrPosPacket.setAddress(Parameters.getAddress());                     // prepare the current position packet
+          CurrPosPacket.setAddrType(Parameters.getAddrType());
+          CurrPosPacket.clrOther(); CurrPosPacket.calcAddrParity();
+          CurrPosPacket.clrEmergency(); CurrPosPacket.clrEncrypted(); CurrPosPacket.setRelayCount(0);
+          Position->Encode(CurrPosPacket);
+          CurrPosPacket.setStealth(Parameters.getStealth());
+          CurrPosPacket.setAcftType(Parameters.getAcftType());
+          CurrPosPacket.Whiten(); CurrPosPacket.calcFEC();
+          CurrPosPacket.setReady();
+        }
+      }
+    } else                                                                     // if GPS lock is not there
+    { }                                                                        // we should invalidate position after some time
+/*
+    TRX.WriteMode(RFM69_OPMODE_STDBY);                                         // switch to standy
+    vTaskDelay(1);
 
-    uint32_t RxRssiSum=0; uint16_t RxRssiCount=0;         // measure the average RSSI for lower frequency
+    TX_FreqChan=0; TRX.WriteFreq(LowFreq+Parameters.RFchipFreqCorr);           // switch to upper frequency
+
+    TRX.WriteMode(RFM69_OPMODE_RX);                                            // switch to receive mode
+    vTaskDelay(1);
+*/
+    uint32_t RxRssiSum=0; uint16_t RxRssiCount=0;                              // measure the average RSSI for lower frequency
     do
     { Receive();
       TRX.TriggerRSSI();
@@ -276,46 +330,47 @@ void vTaskRF(void* pvParameters)
     } while(PPS_Phase()<300);
     RX_RssiLow = RxRssiSum/RxRssiCount; // [-0.5dBm]
 
-    TRX.WriteMode(RFM69_OPMODE_STDBY);                               // switch to standy
+    TRX.WriteMode(RFM69_OPMODE_STDBY);                                         // switch to standy
     vTaskDelay(1);
 
-    if(RX_Idle>=60)                                                    // if no reception within one minute
-    { StartRFchip();                                                   // reset and rewrite the RF chip config
+    if(RX_Idle>=60)                                                            // if no reception within one minute
+    { StartRFchip();                                                           // reset and rewrite the RF chip config
       RX_Idle=0; }
-                                                                        // here we can read the chip temperature
-    TX_FreqChan=1; TRX.WriteFreq(UppFreq+Parameters.RFchipFreqCorr);    // switch to upper frequency
-    TX_Credit++; if(!TX_Credit) TX_Credit--;                            // new half-slot => increment the transmission credit
-    int TxTimeUpp = RX_Random%400;                                      // when to transmit the packet
+                                                                               // here we can read the chip temperature
+    TX_FreqChan=1; TRX.WriteFreq(UppFreq+Parameters.RFchipFreqCorr);           // switch to upper frequency
 
-    TRX.TriggerTemp();
-    vTaskDelay(1); // while(TRX.RunningTemp()) taskYIELD();
-    int8_t ChipTemp= 165-TRX.ReadTemp();
+    TRX.TriggerTemp();                                                         // trigger RF chip temperature readout
+    vTaskDelay(1); // while(TRX.RunningTemp()) taskYIELD();                    // wait for conversion to be ready
+    int8_t ChipTemp= 165-TRX.ReadTemp();                                       // read RF chip temperature
 
-    TRX.WriteMode(RFM69_OPMODE_RX);                            // switch to receive mode
+    TRX.WriteMode(RFM69_OPMODE_RX);                                            // switch to receive mode
     vTaskDelay(1);
 
-    RxRssiSum=0; RxRssiCount=0;                                // measure the average RSSI for the upper frequency
+    RxRssiSum=0; RxRssiCount=0;                                                // measure the average RSSI for the upper frequency
     do
-    { Receive();                                               // check for packets being received ?
-      TRX.TriggerRSSI();                                       // start RSSI measurement
+    { Receive();                                                               // check for packets being received ?
+      TRX.TriggerRSSI();                                                       // start RSSI measurement
       vTaskDelay(1);
-      uint8_t RxRSSI=TRX.ReadRSSI();                           // read RSSI
-      RX_Random = (RX_Random<<1) | (RxRSSI&1);                 // take lower bit for random number generator
+      uint8_t RxRSSI=TRX.ReadRSSI();                                           // read RSSI
+      RX_Random = (RX_Random<<1) | (RxRSSI&1);                                 // take lower bit for random number generator
       RxRssiSum+=RxRSSI; RxRssiCount++;
-    } while(PPS_Phase()<400);                                  // keep going until 400 ms after PPS
-    RX_RssiUpp = RxRssiSum/RxRssiCount;                        // average RSSI [-0.5dBm]
+    } while(PPS_Phase()<400);                                                  // keep going until 400 ms after PPS
+    RX_RssiUpp = RxRssiSum/RxRssiCount;                                        // average RSSI [-0.5dBm]
 
-    // uint16_t MCU_Temp = ADC1_Read(ADC_Channel_TempSensor);
+    // uint16_t MCU_Temp = ADC1_Read(ADC_Channel_TempSensor);                  // now the knob acquisition took over the ADC
     // uint16_t MCU_Vref = ADC1_Read(ADC_Channel_Vrefint);
+
+    uint8_t Time=GPS_Sec+30; if(Time>=60) Time-=60;
+    RelayQueue.cleanTime(Time);                                                // clean relay queue past 30 seconds
 
     { uint8_t Len=0;
       // memcpy(Line+Len, "$POGNR,", 7); Len+=7;                               // prepare NMEA of status report
       Len+=Format_String(Line+Len, "$POGNR,");
-      Len+=Format_UnsDec(Line+Len, RX_Packets);                             // number of packets received
+      Len+=Format_UnsDec(Line+Len, RX_Packets);                                // number of packets received
       Line[Len++]=',';
-      Len+=Format_SignDec(Line+Len, -(RX_RssiLow/2));                       // average RF level on the lower frequency
+      Len+=Format_SignDec(Line+Len, -(RX_RssiLow/2));                          // average RF level on the lower frequency
       Line[Len++]=',';
-      Len+=Format_SignDec(Line+Len, -(RX_RssiUpp/2));                       // average RF level on the upper frequency
+      Len+=Format_SignDec(Line+Len, -(RX_RssiUpp/2));                          // average RF level on the upper frequency
       Line[Len++]=',';
       Len+=Format_SignDec(Line+Len, (int16_t)ChipTemp);
       Line[Len++]=',';
@@ -324,29 +379,43 @@ void vTaskRF(void* pvParameters)
       // Len+=Format_UnsDec(Line+Len, MCU_Vref);
       // Line[Len++]=',';
       Len+=Format_UnsDec(Line+Len, (uint16_t)TX_Credit);
-      Len+=NMEA_AppendCheckCRNL(Line, Len);                                 // append NMEA check-sum and CR+NL
+      Len+=NMEA_AppendCheckCRNL(Line, Len);                                    // append NMEA check-sum and CR+NL
       LogLine(Line);
       xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
-      Format_String(UART1_Write, Line, Len);                                 // send the NMEA out to the console
+      Format_String(UART1_Write, Line, Len);                                   // send the NMEA out to the console
+      // RelayQueue.Print(Line);
+      // Format_String(UART1_Write, Line);
       xSemaphoreGive(UART1_Mutex);
       if(RX_Packets) RX_Idle=0;
                else  RX_Idle++;
-      RX_Packets=0;                                                          // clear th ereceived packet count
+      RX_Packets=0;                                                            // clear th ereceived packet count
     }
 
-    Receive(TxTimeUpp);                                                      // keep receiving until the transmit time
-    if(TX_Credit)
-      TX_Credit-=Transmit(PacketPtr, RX_RssiUpp, 8);                         // attempt to transmit the packet
-    Receive(390-TxTimeUpp);                                                  // receive till the end of the time slot
+    uint8_t DoRelay = (RelayQueue.Sum>0) && (TX_Credit>4);                     // shall we do packet relay in this time slot ?
 
-    TX_FreqChan=0; TRX.WriteFreq(LowFreq+Parameters.RFchipFreqCorr);         // switch to lower frequency
-    TX_Credit++; if(!TX_Credit) TX_Credit--;                                 // new half slot => increment transmission credit
-    int TxTimeLow = RX_Random%400;                                           // decide when to transmit
+    TX_Credit++; if(!TX_Credit) TX_Credit--;                                   // new half-slot => increment the transmission credit
 
-    Receive(TxTimeLow);                                                      // receive until transmit time comes
-    if(TX_Credit)
-      TX_Credit-=Transmit(PacketPtr, RX_RssiLow, 8);                         // attempt to transmit the packet
-    Receive(390-TxTimeLow);                                                  // receive till the end of the time-slot
+    if(DoRelay) GetRelayPacket();
+
+    if(DoRelay)
+    { TimeSlot(200, CurrPosPacket.isReady() ? CurrPosPacket.Byte:0, RX_RssiUpp);
+      TimeSlot(200,   RelayPacket.isReady() ? RelayPacket.Byte  :0, RX_RssiUpp); }
+    else
+    { TimeSlot(400, CurrPosPacket.isReady() ? CurrPosPacket.Byte:0, RX_RssiUpp); }
+
+    TX_FreqChan=0; TRX.WriteFreq(LowFreq+Parameters.RFchipFreqCorr);           // switch to lower frequency
+
+    DoRelay = (RelayQueue.Sum>0) && (TX_Credit>4);
+
+    TX_Credit++; if(!TX_Credit) TX_Credit--;                                   // new half slot => increment transmission credit
+
+    if(DoRelay) GetRelayPacket();
+
+    if(DoRelay)
+    { TimeSlot(200, CurrPosPacket.isReady() ? CurrPosPacket.Byte:0, RX_RssiLow);
+      TimeSlot(200,   RelayPacket.isReady() ? RelayPacket.Byte  :0, RX_RssiLow); }
+    else
+    { TimeSlot(400, CurrPosPacket.isReady() ? CurrPosPacket.Byte:0, RX_RssiLow); }
 
   }
 

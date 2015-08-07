@@ -319,9 +319,14 @@ void prvSetupHardware(void)
 
   // NVIC_Configuration();
 
-  if(Parameters.ReadFromFlash()<0)
-  { Parameters.setDefault();
-    Parameters.WriteToFlash(); }
+  if(Parameters.ReadFromFlash()<0) // read parameters from Flash
+  { Parameters.setDefault();       // if nov valid: set defaults
+    Parameters.WriteToFlash(); }   // and write the defaults back to Flash
+
+  // to overwrite parameters
+  // Parameters.setTxTypeHW();
+  // Parameters.setTxPower(+14); // for RFM69HW (H = up to +20dBm Tx power)
+  // Parameters.WriteToFlash();
 
   UART1_Configuration(Parameters.CONbaud); // Console/Bluetooth serial adapter
 
@@ -342,15 +347,10 @@ void prvSetupHardware(void)
   Beep_Configuration();
 #endif
 
-  // to overwrite parameters
-  // Parameters.setTxTypeHW();
-  // Parameters.setTxPower(+14); // for RFM69HW (H = up to +20dBm Tx power)
-  // Parameters.WriteToFlash();
-
   // setup watch-dog
   IWDG_WriteAccessCmd(IWDG_WriteAccess_Enable);
   IWDG_SetPrescaler(IWDG_Prescaler_8);              // about 40kHz/8 = 5kHz counter
-  IWDG_SetReload(100);                              // reload with 100 thus 20ms timeout ?
+  IWDG_SetReload(250);                              // reload with 250 thus 50ms timeout ?
   IWDG_ReloadCounter();                             // reload timer = reset the watch-dog
   IWDG_Enable();                                    // enable RESET at timeout
 }
@@ -401,7 +401,7 @@ int main(void)
 
 // lot of things to do:
 // + read NMEA user input
-// . set Parameters in Flash from NMEA
+// + set Parameters in Flash from $POGNS
 //
 // + send received positions to console
 // + send received positions to console as $POGNT
@@ -418,7 +418,7 @@ int main(void)
 // . separate task for FEC correction
 // . separate task for RX processing (retransmission decision)
 // . good packets go to RX, bad packets go to FEC first
-// . packet retransmission and strategy
+// + packet retransmission and strategy
 //
 // + queue for sounds to be played on the buzzer
 // + separate the UART code
@@ -430,6 +430,7 @@ int main(void)
 // + SD card slot and FatFS
 // + simple log system onto SD
 // + regular log close and auto-resume when card inserted
+// + DDMMYY in the log file name
 // . IGC log
 //
 // . auto-detect RFM69W or RFM69HW - possible at all ?
@@ -437,7 +438,7 @@ int main(void)
 // . compensate Rx/Tx frequency by RF chip temperature
 //
 // . measure the CPU temperature
-// . measure VCC voltage: low battery indicator
+// . measure VCC voltage: low battery indicator ?
 // + resolve unstable ADC readout
 //
 // . detect when VK16u6 GPS fails below 2.7V supply
@@ -454,14 +455,15 @@ int main(void)
 // + correlate pressure and GPS altitude
 // . resolve extra dummy byte transfer for I2C_Read()
 // . recover from I2C hang-up
+// - BMP180 readout fails sometimes: initial delay after power-up or something else ?
 // + send pressure data in $POGNB
 // + vario sound
-// + adapt vario integration time to link/sink
+// - adapt vario integration time to climb/sink
 // + separate task for BMP180 and other I2C sensors
-// . send standard/pressure altitude in the packet ?
+// + send standard/pressure altitude in the packet ?
 // . when measuring pressure avoid times when TX or LOG is active to reduce noise ?
 //
-// . stop transmission 60 sec after GPS lock is lost ?
+// . stop transmission 60 sec after GPS lock is lost or mark the time as invalid
 // . audible alert when RF chip fails ?
 // + all hardware configure to main() before tasks start ?
 //
@@ -474,7 +476,7 @@ int main(void)
 // . read compass, gyro, accel.
 //
 // + int math into a single file
-// + bitcount: option to save flash storage: reduce lookup table from 256 to 16 bytes
+// + bitcount: option to reduce code size: reduce lookup table from 256 to 16 bytes
 // . thermal circling detection
 // . measure/transmit/receive QNH
 // . measure/transmit/receive wind

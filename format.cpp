@@ -121,6 +121,12 @@ uint8_t Format_Hex( char *Output, uint32_t Word, uint8_t Digits)
 
 // ------------------------------------------------------------------------------------------
 
+   int8_t Read_Hex1(char Digit)
+   { int8_t Val=Read_Dec1(Digit); if(Val>=0) return Val; 
+     if( (Digit>='A') && (Digit<='F') ) return Digit-'A'+10;
+     if( (Digit>='a') && (Digit<='f') ) return Digit-'a'+10;
+     return -1; }
+
    int8_t Read_Dec1(char Digit)                   // convert single digit into an integer
    { if(Digit<'0') return -1;                     // return -1 if not a decimal digit
      if(Digit>'9') return -1;
@@ -142,6 +148,3 @@ uint8_t Format_Hex( char *Output, uint32_t Word, uint8_t Digits)
      int16_t Low =Read_Dec2(Inp+2); if(Low<0) return -1;
      return Low + (int16_t)100*(int16_t)High; }
 
-//   int32_t Read_UnsDec(const char *Inp)
-//   { int32_t 
-//   }

@@ -94,6 +94,10 @@ ifneq ($(findstring knob,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_KNOB
 endif
 
+ifneq ($(findstring config,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_CONFIG
+endif
+
 #-------------------------------------------------------------------------------
 
 CC      = $(TPATH)/$(TCHAIN)-gcc

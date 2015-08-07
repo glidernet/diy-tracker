@@ -1,9 +1,8 @@
 #include "nmea.h"
 
 uint8_t NMEA_Check(uint8_t *NMEA, uint8_t Len) // NMEA check-sum
-{ uint8_t Check=0;                             // to be calculated over characters between '$' and '*'
-  uint8_t Idx;                                 // but _excluding_ those.
-  for(Idx=0; Idx<Len; Idx++)
+{ uint8_t Check=0;                             // to be calculated over characters between '$' and '*' but _excluding_ those.
+  for(uint8_t Idx=0; Idx<Len; Idx++)
     Check^=NMEA[Idx];
   return Check; }
 

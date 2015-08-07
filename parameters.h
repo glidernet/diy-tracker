@@ -14,7 +14,7 @@ class FlashParameters
    uint32_t  AcftID;         // identification: Private:AcftType:AddrType:Address - must be different for every tracker
     int16_t  RFchipFreqCorr; // [61Hz] frequency correction for crystal frequency offset
     int8_t   RFchipTxPower;  // [dBm] highest bit set => HW module (up to +20dBm Tx power)
-    int8_t   RFchipTempCorr; // [degC]
+    int8_t   RFchipTempCorr; // [degC] correction to the temperature measured in the RF chip
    uint32_t  CONbaud;        // [bps] Console baud rate
    uint32_t  GPSbaud;        // [bps] GPS baud rate
 
@@ -55,54 +55,55 @@ class FlashParameters
     GPSbaud        =      9600; // [bps]
   }
 
-  uint32_t static CheckSum(const uint32_t *Word, uint32_t Words)
+  uint32_t static CheckSum(const uint32_t *Word, uint32_t Words)                      // calculate check-sum of pointed data
   { uint32_t Check=CheckInit;
     for(uint32_t Idx=0; Idx<Words; Words++)
     { Check+=Word[Idx]; }
     return Check; }
 
-  uint32_t CheckSum(void) const
+  uint32_t CheckSum(void) const                                                       // calc. check-sum of this class data
   { return CheckSum((uint32_t *)this, sizeof(FlashParameters)/sizeof(uint32_t) ); }
 
   static uint32_t *DefaultFlashAddr(void) { return FlashStart+((uint32_t)(getFlashSize()-1)<<8); }
 
-  int8_t ReadFromFlash(uint32_t *Addr=0)
+  int8_t ReadFromFlash(uint32_t *Addr=0)                                               // read parameters from Flash
   { if(Addr==0) Addr = DefaultFlashAddr();
     const uint32_t Words=sizeof(FlashParameters)/sizeof(uint32_t);
-    uint32_t Check=CheckSum(Addr, Words);
-    if(Check!=Addr[Words]) return -1;
+    uint32_t Check=CheckSum(Addr, Words);                                              // check-sum of Flash data
+    if(Check!=Addr[Words]) return -1;                                                  // agree with the check-sum in Flash ?
     uint32_t *Dst = (uint32_t *)this;
-    for(uint32_t Idx=0; Idx<Words; Idx++)
+    for(uint32_t Idx=0; Idx<Words; Idx++)                                              // read data from Flash
     { Dst[Idx] = Addr[Idx]; }
-    return 1; }
+    return 1; }                                                                        // return: correct
 
-  int8_t WriteToFlash(uint32_t *Addr=0) const
+  int8_t WriteToFlash(uint32_t *Addr=0) const                                          // write parameters to Flash
   { if(Addr==0) Addr = DefaultFlashAddr();
     const uint32_t Words=sizeof(FlashParameters)/sizeof(uint32_t);
-    FLASH_Unlock();
-    FLASH_ErasePage((uint32_t)Addr);
-    uint32_t *Data=(uint32_t *)this;
-    for(uint32_t Idx=0; Idx<Words; Idx++)
-    { FLASH_ProgramWord((uint32_t)Addr, Data[Idx]); Addr++; } // !=FLASH_COMPLETE ?
-    FLASH_ProgramWord((uint32_t)Addr, CheckSum(Data, Words) );
-    FLASH_Lock();
-    if(CheckSum(Addr, Words)!=Addr[Words]) return -1;
+    FLASH_Unlock();                                                                    // unlock Flash
+    FLASH_ErasePage((uint32_t)Addr);                                                   // erase Flash page
+    uint32_t *Data=(uint32_t *)this;                                                   // take data of this object
+    for(uint32_t Idx=0; Idx<Words; Idx++)                                              // word by word
+    { FLASH_ProgramWord((uint32_t)Addr, Data[Idx]); Addr++; } // !=FLASH_COMPLETE ?    // write to Flash
+    FLASH_ProgramWord((uint32_t)Addr, CheckSum(Data, Words) );                         // write the check-sum
+    FLASH_Lock();                                                                      // re-lock Flash
+    if(CheckSum(Addr, Words)!=Addr[Words]) return -1;                                  // verify check-sum in Flash
     return 0; }
 
-  uint8_t Print(char *Line)
+  uint8_t Print(char *Line)       // print parameters on a single line, suitable for console output
   { uint8_t Len=0;
     Line[Len++]=HexDigit(getAcftType()); Line[Len++]=':';
     Line[Len++]=HexDigit(getAddrType()); Line[Len++]=':';
     Len+=Format_Hex(Line+Len, getAddress(), 6);
-    Len+=Format_String(Line+Len, " GPS:");
-    Len+=Format_UnsDec(Line+Len, GPSbaud);
-    Len+=Format_String(Line+Len, "bps ");
-    Len+=Format_SignDec(Line+Len, (int16_t)getTxPower());
-    Len+=Format_String(Line+Len, "dBm");
-    Line[Len++]='/';
+    Len+=Format_String(Line+Len, " RFM69");
     if(isTxTypeHW()) Line[Len++]='H';
     Line[Len++]='W';
-    Line[Len++]=' '; Len+=Format_SignDec(Line+Len, ((int32_t)RFchipFreqCorr*15625+128)>>8, 1); Len+=Format_String(Line+Len, "Hz\n");
+    Line[Len++]='/';
+    Len+=Format_SignDec(Line+Len, (int16_t)getTxPower());
+    Len+=Format_String(Line+Len, "dBm");
+    Line[Len++]=' '; Len+=Format_SignDec(Line+Len, ((int32_t)RFchipFreqCorr*15625+128)>>8, 1); Len+=Format_String(Line+Len, "Hz");
+    Len+=Format_String(Line+Len, " GPS:");
+    Len+=Format_UnsDec(Line+Len, GPSbaud);
+    Len+=Format_String(Line+Len, "bps\n");
     Line[Len]=0;
     return Len; }
 

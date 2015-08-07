@@ -21,6 +21,8 @@
 #include "lowpass2.h"
 #include "intmath.h"
 
+#include "fifo.h"
+
 // static const uint8_t  VarioVolume     =    2; // [0..3]
 static const uint16_t VarioBasePeriod = 800;  // [ms]
 
@@ -55,6 +57,8 @@ static LowPass2<int32_t,6,4,8>   BaroNoise; // low pass (average) filter for pre
 static LowPass2<int64_t,10,9,12> PressAver, // low pass (average) filter for pressure
                                  AltAver;   // low pass (average) filter for GPS altitude
 
+static Delay<int32_t, 8>        PressDelay; // 4-second delay for long-term climb rate
+
 static char Line[64];                       // line to prepare the barometer NMEA sentence
 
 
@@ -66,12 +70,13 @@ static bool InitBaro()
 // #endif
 
   Baro.Bus=I2C1;
-  BaroPipe.Clear(90000);
+  BaroPipe.Clear  (90000);
   BaroNoise.Set(3*16);                 // guess the pressure noise level
 
                                        // initialize the GPS<->Baro correlator
   AltAver.Set(0);                      // [m] Altitude at sea level
   PressAver.Set(4*101300);             // [Pa] Pressure at sea level
+  PressDelay.Clear(4*101300);
 
   uint8_t Err=Baro.CheckID();
   if(Err==0) Err=Baro.ReadCalib();
@@ -84,11 +89,11 @@ static void ProcBaro()
 {
     static uint8_t PipeCount=0;
 
-    int16_t Time  = 10*GPS_Sec;                                           // [0.1sec]
+    int16_t Sec  = 10*GPS_Sec;                                            // [0.1sec]
     uint16_t Phase = PPS_Phase();                                         // sync to the GPS PPS
-    if(Phase>=500) { Time+=10; vTaskDelay(1000-Phase); }
-              else { Time+= 5; vTaskDelay( 500-Phase); }
-    if(Time>=600) Time-=600;
+    if(Phase>=500) { Sec+=10; vTaskDelay(1000-Phase); }
+              else { Sec+= 5; vTaskDelay( 500-Phase); }
+    if(Sec>=600) Sec-=600;
 
     TickType_t Start=xTaskGetTickCount();
     uint8_t Err=Baro.AcquireRawTemperature();                             // measure temperature
@@ -109,16 +114,17 @@ static void ProcBaro()
       { BaroPipe.FitSlope();                                             // fit the average and slope from the four most recent pressure points
         int32_t PLR = Atmosphere::PressureLapseRate(AverPress, Baro.Temperature); // [0.0001m/Pa]
         int32_t ClimbRate = (BaroPipe.Slope*PLR)/200;                             // [0.25Pa/0.5sec] * [0.0001m/Pa] x 200 => [0.01m/sec]
-#ifdef WITH_BEEPER
-        VarioSound(ClimbRate);                                           // calc. residues => noise level
-#endif
+
         BaroPipe.CalcNoise();                                            // calculate the noise (average square residue)
         uint32_t Noise=BaroNoise.Process(BaroPipe.Noise);                // pass the noise through the low pass filter
                  Noise=(IntSqrt(100*Noise)+32)>>6;                       // [0.1 Pa] noise (RMS) measured on the pressure
 
         int32_t Pressure=BaroPipe.Aver;                                  // [0.25 Pa]
         int32_t StdAltitude = Atmosphere::StdAltitude((Pressure+2)>>2);  // [0.1 m]
-
+        int32_t ClimbRate4sec = ((Pressure-PressDelay.Input(Pressure))*PLR)/800; // [0.01m/sec] climb rate over 4 sec.
+#ifdef WITH_BEEPER
+        VarioSound(ClimbRate);                                           // calc. residues => noise level
+#endif
         if( (Phase>=500) && GPS_TimeSinceLock)
         { PressAver.Process(Pressure);                                   // [0.25 Pa] pass pressure through low pass filter
           AltAver.Process(GPS_Altitude);                                 // [0.1 m] pass GPS altitude through same low pass filter
@@ -127,9 +133,16 @@ static void ProcBaro()
         int32_t AltDiff = (PressDiff*(PLR>>4))/250;                      // [0.1 m]
         int32_t Altitude=((AltAver.Out+2048)>>12)+AltDiff;               // [0.1 m]
 
+        uint8_t Frac = Sec%10;
+        if(Frac==0)
+        { OgnPosition *PosPtr = GPS_getPosition(Sec/10);
+          PosPtr->StdAltitude = StdAltitude;
+          PosPtr->Temperature = Baro.Temperature;
+          PosPtr->setBaro(); }
+
         uint8_t Len=0;                                                   // start preparing the barometer NMEA sentence
         Len+=Format_String(Line+Len, "$POGNB,");
-        Len+=Format_UnsDec(Line+Len, Time, 3, 1);                        // [sec] measurement time
+        Len+=Format_UnsDec(Line+Len, Sec, 3, 1);                         // [sec] measurement time
         Line[Len++]=',';
         Len+=Format_SignDec(Line+Len, Baro.Temperature, 2, 1);           // [degC] temperature
         Line[Len++]=',';

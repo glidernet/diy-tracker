@@ -73,7 +73,7 @@ template <class Type, const uint8_t Size=8> // size must be (!) a power of 2 lik
        Data[Idx]=Zero;
      Ptr=0; }
 
-   Type Process(Type Inp)
+   Type Input(Type Inp)
    { Ptr--; Ptr&=PtrMask; 
      Type Out=Data[Ptr];
      Data[Ptr]=Inp;

@@ -3,6 +3,8 @@
 #include "semphr.h"
 #include "queue.h"
 
+#include "stm32f10x_iwdg.h"
+
 #include <string.h>
 
 #include "ctrl.h"
@@ -40,14 +42,15 @@ static void ProcessCtrlC(void)                                  // print system 
   size_t FreeHeap = xPortGetFreeHeapSize();
 
   xSemaphoreTake(UART1_Mutex, portMAX_DELAY);                   // ask exclusivity on UART1
+
   Format_String(UART1_Write, "Task  Pr. Stack, ");
   Format_UnsDec(UART1_Write, (uint32_t)FreeHeap, 4, 3);
   Format_String(UART1_Write, "kB free\n");
-  xSemaphoreGive(UART1_Mutex);                                  // give back UART1 to other tasks
+  // xSemaphoreGive(UART1_Mutex);                                  // give back UART1 to other tasks
 
   UBaseType_t uxArraySize = uxTaskGetNumberOfTasks();
   TaskStatus_t *pxTaskStatusArray = (TaskStatus_t *)pvPortMalloc( uxArraySize * sizeof( TaskStatus_t ) );
-  if(pxTaskStatusArray==0) return;
+  if(pxTaskStatusArray==0) goto Exit;
   uxArraySize = uxTaskGetSystemState( pxTaskStatusArray, uxArraySize, NULL );
   for(UBaseType_t T=0; T<uxArraySize; T++)
   { TaskStatus_t *Task = pxTaskStatusArray+T;
@@ -59,21 +62,65 @@ static void ProcessCtrlC(void)                                  // print system 
     Line[Len++]='0'+Task->uxCurrentPriority; Line[Len++]=' ';
     Len+=Format_UnsDec(Line+Len, Task->usStackHighWaterMark, 3);
     Line[Len++]='\n'; Line[Len++]=0;
-    xSemaphoreTake(UART1_Mutex, portMAX_DELAY);                   // ask exclusivity on UART1
+    // xSemaphoreTake(UART1_Mutex, portMAX_DELAY);                   // ask exclusivity on UART1
     Format_String(UART1_Write, Line);
-    xSemaphoreGive(UART1_Mutex);                                  // give back UART1 to other tasks
+    // xSemaphoreGive(UART1_Mutex);                                  // give back UART1 to other tasks
   }
   vPortFree( pxTaskStatusArray );
+Exit:
+  xSemaphoreGive(UART1_Mutex);                                       // give back UART1 to other tasks
 }
+
+// ================================================================================================
 
 static NMEA_RxMsg NMEA;
 
+#ifdef WITH_CONFIG
 static void ReadParameters(void)  // read parameters requested by the user in the NMEA sent.
-{
+{ if((!NMEA.hasCheck()) || NMEA.isChecked() )
+  { const char *Parm; int8_t Val;
+    Parm = (const char *)NMEA.ParmPtr(0);                                  // [0..15] aircraft-type: 1=glider, 2=towa plane, 3=helicopter, ...
+    if(Parm)
+    { Val=Read_Hex1(Parm[0]);
+      if( (Val>=0) && (Val<16) ) Parameters.setAcftType(Val); }
+    Parm = (const char *)NMEA.ParmPtr(1);                                  // [0..3] addr-type: 1=ICAO, 2=FLARM, 3=OGN
+    if(Parm)
+    { Val=Read_Hex1(Parm[0]);
+      if( (Val>=0) && (Val<4) ) Parameters.setAddrType(Val); }
+    Parm = (const char *)NMEA.ParmPtr(2);                                  // [HHHHHH] Address (ID): 6 hex digits, 24-bit
+    uint32_t Addr;
+    int8_t Len=Read_Hex(Addr, Parm);
+    if( (Len==6) && (Addr<0x01000000) ) Parameters.setAddress(Addr);
+    Parm = (const char *)NMEA.ParmPtr(3);                                  // [0..1] RFM69HW (up to +20dBm) or W (up to +13dBm)
+    if(Parm)
+    { Val=Read_Dec1(Parm[0]);
+           if(Val==0) Parameters.clrTxTypeHW();
+      else if(Val==1) Parameters.setTxTypeHW(); }
+    Parm = (const char *)NMEA.ParmPtr(4);                                  // [dBm] Tx power
+    int32_t TxPower;
+    Len=Read_SignDec(TxPower, Parm);
+    if( (Len>0) && (TxPower>=(-10)) && (TxPower<=20) ) Parameters.setTxPower(TxPower);
+    Parm = (const char *)NMEA.ParmPtr(5);                                  // [Hz] Tx/Rx frequency correction
+    int32_t FreqCorr;
+    Len=Read_SignDec(FreqCorr, Parm);
+    if( (Len>0) && (FreqCorr>=(-100000)) && (FreqCorr<=100000) ) Parameters.RFchipFreqCorr = (FreqCorr<<8)/15625;
+
+    taskDISABLE_INTERRUPTS();                                              // disable all interrupts: Flash can not be read while being erased
+    IWDG_ReloadCounter();                                                  // kick the watch-dog
+    Parameters.WriteToFlash();                                             // erase and write the parameters into the last page of Flash
+    if(Parameters.ReadFromFlash()<0) Parameters.setDefault();              // read the parameters back: if invalid, set defaults
+    taskENABLE_INTERRUPTS();                                               // bring back interrupts and the system
+  }
+  PrintParameters();
 }
+#endif
 
 static void ProcessNMEA(void)     // process a valid NMEA that got to the console
-{ }
+{ 
+#ifdef WITH_CONFIG
+  if(NMEA.isPOGNS()) ReadParameters();
+#endif
+}
 
 static void ProcessInput(void)
 {
@@ -82,23 +129,31 @@ static void ProcessInput(void)
     if(Byte==0x03) ProcessCtrlC();                            // if Ctrl-C received
     NMEA.ProcessByte(Byte);                                   // pass the byte through the NMEA processor
     if(NMEA.isComplete())                                     // if complete NMEA:
-    { if(NMEA.isChecked()) ProcessNMEA();                     // and if CRC is good: interpret the NMEA
+    { /* if(NMEA.isChecked()) */ ProcessNMEA();               // and if CRC is good: interpret the NMEA
       NMEA.Clear(); }                                         // clear the NMEA processor for the next sentence
   }
 }
 
+// ================================================================================================
+
 #ifdef WITH_SDLOG
-static   uint16_t  LogDate     =              0;                  // [days] date = UnixTime/86400
-static       char  LogName[14] = "TRK00000.LOG";                  // log file name
+static   uint16_t  LogDate     =              0;                  // [~days] date = FatTime>>16
+static       char  LogName[14] = "TR000000.LOG";                  // log file name
 static FRESULT     LogErr;                                        // most recent error/state of the logging system
 static FATFS       FatFs;                                         // FatFS object for the file system (FAT)
 static FIL         LogFile;                                       // FatFS object for the log file
-static TickType_t  LogOpenTime;                                   // when was the log file (re)open
+static TickType_t  LogOpenTime;                                   // [msec] when was the log file (re)open
+static const  TickType_t  LogReopen = 20000;                      // [msec] when to close and re-open the log file
 xQueueHandle       LogQueue;                                      // queue that stores pointers to lines to be written to the log file
 
-void Log_Open(void)
-{ LogDate=get_fattime()/86400;                                    // get the unix date
-  Format_UnsDec(LogName+3, LogDate, 5);                           // format the date into the log file name
+static void Log_Open(void)
+{ LogDate=get_fattime()>>16;                                      // get the FAT-time date part
+  int32_t Day   =  LogDate    &0x1F;                              // get day, month, year
+  int32_t Month = (LogDate>>5)&0x0F;
+  int32_t Year  = (LogDate>>9)-20;
+  uint32_t Date = 0;
+  if(Year>=0) Date = Day*10000 + Month*100 + Year;                // create DDMMYY number for easy printout
+  Format_UnsDec(LogName+2,    Date, 6);                           // format the date into the log file name
   LogErr=f_open(&LogFile, LogName, FA_WRITE | FA_OPEN_ALWAYS);    // open the log file
   if(LogErr)
   { // xSemaphoreTake(UART1_Mutex, portMAX_DELAY);                   // ask exclusivity on UART1
@@ -121,7 +176,7 @@ void Log_Open(void)
 
 }
 
-void Log_Write(const char *Line)                                  // write the Line to the log file
+static void Log_Write(const char *Line)                           // write the Line to the log file
 { if(LogErr)                                                      // if last operation was in error
   { f_close(&LogFile);                                            // attempt to reopen the file system
     LogErr=f_mount(&FatFs, "", 0);                                // here it should quickly catch if the SD card is not there
@@ -142,21 +197,26 @@ void Log_Write(const char *Line)                                  // write the L
   }
 }
 
-void Log_Check(void)                                      // time check:
+static void Log_Check(void)                               // time check:
 { if(LogErr) return;                                      // if last operation in error then don't do anything
   TickType_t OpenTime = xTaskGetTickCount()-LogOpenTime;  // when did we (re)open the log file last time
-  if(OpenTime<30000) return;                              // if fresh (less than 30 seconds) then nothing to do
+  if(LogDate)
+  { if(OpenTime<LogReopen) return; }                      // if fresh (less than 30 seconds) then nothing to do
+  else
+  { if(OpenTime<(LogReopen/4)) return; }
   f_close(&LogFile);                                      // close and reopen the log file when older than 10 seconds
   Log_Open();
 }
 
-void ProcessLog(void)                                     // process the queue of lines to be written to the log
+static void ProcessLog(void)                              // process the queue of lines to be written to the log
 { char *Line;
   while(xQueueReceive(LogQueue, &Line, 0)==pdTRUE)        // get the pointer to the line from the queue
     Log_Write(Line);                                      // write the line to the log file
   Log_Check();                                            // time check the log file
 }
 #endif // WITH_SDLOG
+
+// ================================================================================================
 
 extern "C"
 void vTaskCTRL(void* pvParameters)
@@ -183,6 +243,8 @@ void vTaskCTRL(void* pvParameters)
 #endif
   xSemaphoreGive(UART1_Mutex);                                  // give back UART1 to other tasks
   PrintParameters();
+
+  // vTaskDelay(1000);  // give chance to the GPS to catch the date
 
   NMEA.Clear();
 

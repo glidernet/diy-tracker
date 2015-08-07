@@ -94,7 +94,7 @@
 #define configTICK_RATE_HZ		( ( TickType_t ) 1000 )            // 1000Hz = 1 tick/ms
 #define configMAX_PRIORITIES		( 5 )
 #define configMINIMAL_STACK_SIZE	( ( unsigned short ) 64 )
-#define configTOTAL_HEAP_SIZE		( ( size_t ) ( 16 * 1024 ) )       // total RAM is 20kB
+#define configTOTAL_HEAP_SIZE		( ( size_t ) ( 12 * 1024 ) )       // total RAM is 20kB
 #define configMAX_TASK_NAME_LEN		( 7 )
 #define configUSE_TRACE_FACILITY	1                                  // for vTaskList()
 // #define configUSE_STATS_FORMATTING_FUNCTIONS 1

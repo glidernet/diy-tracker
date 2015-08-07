@@ -30,7 +30,7 @@ void SPI2_Configuration(void)
   SPI_InitStructure.SPI_CPOL     = SPI_CPOL_Low;
   SPI_InitStructure.SPI_CPHA     = SPI_CPHA_1Edge;
   SPI_InitStructure.SPI_NSS      = SPI_NSS_Soft;
-  SPI_InitStructure.SPI_BaudRatePrescaler = SPI_BaudRatePrescaler_4; // 60MHz/4 = 15MHz SPI bitrate (30MHz could possibly work ?)
+  SPI_InitStructure.SPI_BaudRatePrescaler = SPI_BaudRatePrescaler_2; // 60MHz/4 = 15MHz SPI bitrate (30MHz could possibly work ?)
   SPI_InitStructure.SPI_FirstBit = SPI_FirstBit_MSB;
   SPI_InitStructure.SPI_CRCPolynomial = 7;
   SPI_Init(SPI2, &SPI_InitStructure);
@@ -54,7 +54,7 @@ uint8_t SPI2_TransferByte(uint8_t Byte)
 #ifdef SPEEDUP_STM_LIB
 void SPI2_Fast(void)
 { SPI2->CR1 &= 0XFFC7;    // disable (?) the SPI and clear prescaler
-  SPI2->CR1 |= SPI_BaudRatePrescaler_4;
+  SPI2->CR1 |= SPI_BaudRatePrescaler_2;
   SPI2->CR1 |= 0x0040; }  // re-enable the SPI
 
 void SPI2_Slow(void)

@@ -46,25 +46,23 @@ void GPS_Configuration (void)
 
 // void Debug_Print(uint8_t Byte) { while(!UART1_TxEmpty()) taskYIELD(); UART1_TxChar(Byte); }
 
-xQueueHandle xQueuePacket;
+static NMEA_RxMsg  NMEA;                 // NMEA sentences catcher
+static UBX_RxMsg   UBX;                  // UBX messages catcher
 
-static NMEA_RxMsg  NMEA;               // NMEA sentences catcher
-static UBX_RxMsg   UBX;                // UBX messages catcher
-
-static OgnPosition Position[4];        // four GPS position pipe
+static OgnPosition Position[4];          // four GPS position pipe
 static uint8_t     PosIdx;
 
-static OGN_Packet  Packet[2];          // two OGN packet pipe
-static uint8_t     PktIdx;
-
-static TickType_t Burst_TickCount;     // [msec] TickCount when the data burst from GPS started
+static TickType_t Burst_TickCount;       // [msec] TickCount when the data burst from GPS started
 
          TickType_t PPS_TickCount;       // [msec] TickCount of the most recent PPS pulse
          uint32_t   GPS_TimeSinceLock;   // [sec] time since the GPS has a lock
 volatile  uint8_t   GPS_Sec=0;           // [sec] UTC time: second
+
          uint32_t   GPS_UnixTime=0;      // [sec] UTC date/time in Unix format
          uint32_t   GPS_FatTime=0;       // [sec] UTC date/time in FAT format
           int32_t   GPS_Altitude=0;      // [0.1m] last valid altitude
+          int32_t   GPS_Latitude=0;
+          int32_t   GPS_Longitude=0;
           int16_t   GPS_GeoidSepar=0;    // [0.1m]
 
 // static char Line[64];                  // for console output formating
@@ -124,35 +122,42 @@ static void GPS_BurstEnd(void)                                             // wh
     if(Position[PosIdx].isValid())                                         // position is complete and locked
     { GPS_TimeSinceLock++;
       GPS_Altitude=Position[PosIdx].Altitude;
+      GPS_Latitude=Position[PosIdx].Latitude;
+      GPS_Longitude=Position[PosIdx].Longitude;
       GPS_GeoidSepar=Position[PosIdx].GeoidSeparation;
       if(GPS_TimeSinceLock==1)
       { GPS_LockStart(); }
       if(GPS_TimeSinceLock>2)
       { uint8_t PrevIdx=(PosIdx+2)&3;
         int Delta=Position[PosIdx].calcDifferences(Position[PrevIdx]);
-        Packet[PktIdx].setAddress(Parameters.getAddress());                     // prepare the packet
-        Packet[PktIdx].setAddrType(Parameters.getAddrType());
-        Packet[PktIdx].clrOther(); Packet[PktIdx].calcAddrParity();
-        Packet[PktIdx].clrEmergency(); Packet[PktIdx].clrEncrypted(); Packet[PktIdx].setRelayCount(0);
-        Position[PosIdx].Encode(Packet[PktIdx]);
-        Packet[PktIdx].setStealth(Parameters.getStealth());
-        Packet[PktIdx].setAcftType(Parameters.getAcftType());
-        Packet[PktIdx].Whiten(); Packet[PktIdx].calcFEC(); Packet[PktIdx].setReady();
-        OGN_Packet *PktPtr = &Packet[PktIdx];
-        xQueueSend(xQueuePacket, &PktPtr, 10);                            // send the new packet to the RF task
-        PktIdx^=1; LED_PCB_Flash(100);
-      }
+        LED_PCB_Flash(100); }
     }
     else                                                                  // complete but not valid lock
     { if(GPS_TimeSinceLock) { GPS_LockEnd(); GPS_TimeSinceLock=0; }
     }
   }
-  else
+  else                                                                    // posiiton not complete, no GPS lock
   { if(GPS_TimeSinceLock) { GPS_LockEnd(); GPS_TimeSinceLock=0; }
   }
+  int8_t Sec=Position[PosIdx].Sec;
   PosIdx=(PosIdx+1)&3; Position[PosIdx].Clear();
-
+  if(Sec>=0) { Sec+=1; if(Sec>=60) Sec-=60; }
+  Position[PosIdx].Sec=Sec;
 }
+
+OgnPosition *GPS_getPosition(void)
+{ uint8_t PrevIdx=PosIdx;
+  OgnPosition *PrevPos = Position+PrevIdx;
+  if(PrevPos->isComplete()) return PrevPos;
+  PrevIdx=(PrevIdx+3)&3;
+               PrevPos = Position+PrevIdx;
+  if(PrevPos->isComplete()) return PrevPos;
+  return 0; }
+
+OgnPosition *GPS_getPosition(int8_t Sec)
+{ for(uint8_t Idx=0; Idx<4; Idx++)
+  { if(Sec==Position[Idx].Sec) return Position+Idx; }
+  return 0; }
 
 // ----------------------------------------------------------------------------
 
@@ -182,8 +187,7 @@ static void GPS_UBX(void)                                                       
   extern "C"
 #endif
 void vTaskGPS(void* pvParameters)
-{ xQueuePacket = xQueueCreate(2, sizeof(OGN_Packet *));
-  PPS_TickCount=0;
+{ PPS_TickCount=0;
   Burst_TickCount=0;
 
   // UART2_Configuration(Parameters.GPSbaud);
@@ -203,7 +207,7 @@ void vTaskGPS(void* pvParameters)
     for(uint8_t Idx=0; Idx<4; Idx++)
       Position[Idx].Clear();
     PosIdx=0;
-    PktIdx=0;
+    // PktIdx=0;
 
     for( ; ; )                                                             //
     { vTaskDelay(1);                                                       // wait for the next time tick
