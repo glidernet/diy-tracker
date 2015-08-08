@@ -45,6 +45,7 @@ class OGN_Packet          // Packet structure for the OGN tracker
                            // meteo report would transmit: Humidity, Barometric pressure, Temperature, wind Speed/Direction                          
                            // 2: HHHH HHHH SSSS SSSS SSAA AAAA AAAA AAAA
                            // 3: TTTT TTTT YYYY BBBB BBBB BBDD DDDD DDDD  YYYY = report tYpe (meteo, thermal, water level, other telemetry)
+
       uint32_t FEC[2];     // Gallager code: 48 check bits for 160 user bits
     } ;
   } ;
@@ -482,25 +483,25 @@ class OGN_PrioQueue
    uint8_t              Low, LowIdx;         // lowest rank and index
 
   public:
-   void Clear(void)
-   { for(uint8_t Idx=0; Idx<Size; Idx++)
+   void Clear(void)                                                           // clear (reset) the queue
+   { for(uint8_t Idx=0; Idx<Size; Idx++)                                      // clear every packet
      { Packet[Idx].Clear(); }
-     Sum=0; Low=0; LowIdx=0; }
+     Sum=0; Low=0; LowIdx=0; }                                                // clear the rank sum, lowest rank
 
    OGN_Packet * operator [](uint8_t Idx) { return Packet+Idx; }
 
-   uint8_t getNew(void)                                                       // get (index of) free or lowest rank position
-   { Sum-=Packet[LowIdx].Rank; Packet[LowIdx].Rank=0; Low=0; return LowIdx; } // remove old packet
+   uint8_t getNew(void)                                                       // get (index of) a free or lowest rank packet
+   { Sum-=Packet[LowIdx].Rank; Packet[LowIdx].Rank=0; Low=0; return LowIdx; } // remove old packet from the rank sum
 
    void addNew(uint8_t NewIdx)                                                // add the new packet to the queue
-   { uint32_t AddressAndType = Packet[NewIdx].getAddressAndType();            // get ID of this packet
+   { uint32_t AddressAndType = Packet[NewIdx].getAddressAndType();            // get ID of this packet: ID is address-type and address (2+24 = 26 bits)
      for(uint8_t Idx=0; Idx<Size; Idx++)                                      // look for other packets with same ID
      { if(Idx==NewIdx) continue;                                              // avoid the new packet
-       if(Packet[Idx].getAddressAndType() == AddressAndType)
-       { Sum-=Packet[Idx].Rank; Packet[Idx].Rank=0; Low=0; LowIdx=Idx; }      // clear packets with same ID
+       if(Packet[Idx].getAddressAndType() == AddressAndType)                  // if another packet with same ID:
+       { Sum-=Packet[Idx].Rank; Packet[Idx].Rank=0; Low=0; LowIdx=Idx; }      // then remove it: set rank to zero
      }
-     uint8_t Rank=Packet[NewIdx].Rank; Sum+=Rank;
-     if(NewIdx!=LowIdx)
+     uint8_t Rank=Packet[NewIdx].Rank; Sum+=Rank;                             // add the new packet to the rank sum
+     if(NewIdx!=LowIdx)                                                       // 
      { if(Rank<=Low) { Low=Rank; LowIdx=NewIdx; } }
      else reCalc();
    }
@@ -525,8 +526,8 @@ class OGN_PrioQueue
 
    void cleanTime(uint8_t Time)                                                // clean up packets of given Time
    { for(int Idx=0; Idx<Size; Idx++)
-     { if(Packet[Idx].getTime()==Time)
-       { Sum-=Packet[Idx].Rank; Packet[Idx].Rank=0; Low=0; }
+     { if( (Packet[Idx].Rank) && (Packet[Idx].getTime()==Time) )
+       { Sum-=Packet[Idx].Rank; Packet[Idx].Rank=0; Low=0; LowIdx=0; }
      }
    }
 

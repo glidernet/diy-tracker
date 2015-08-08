@@ -129,7 +129,7 @@ static void GPS_BurstEnd(void)                                             // wh
       { GPS_LockStart(); }
       if(GPS_TimeSinceLock>2)
       { uint8_t PrevIdx=(PosIdx+2)&3;
-        int Delta=Position[PosIdx].calcDifferences(Position[PrevIdx]);
+        /* int Delta = */ Position[PosIdx].calcDifferences(Position[PrevIdx]);
         LED_PCB_Flash(100); }
     }
     else                                                                  // complete but not valid lock
