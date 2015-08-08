@@ -13,7 +13,7 @@
 
 #include "main.h"
 
-volatile uint8_t KNOB_Tick=8;
+volatile uint8_t KNOB_Tick=15;
 
 #ifdef __cplusplus
   extern "C"

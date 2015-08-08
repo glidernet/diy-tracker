@@ -273,6 +273,7 @@ class OGN_Packet          // Packet structure for the OGN tracker
    // int32_t static RoundDiv(int32_t Value, int32_t Div)
    // { return Value>0 ? (Value+Div/2)/Div : (Value-Div/2)/Div; }
 
+                                                                        // calc. rank for retransmission: higher rank, better chance to retransmit
    void calcRelayRank(int32_t RxAltitude)                               // [0.1m] altitude of reception
    { if(isEmergency()) { Rank=0xFF; return; }                           // emergency packets always highest rank
      Rank=0;
@@ -531,10 +532,21 @@ class OGN_PrioQueue
      }
    }
 
+   void decrRank(uint8_t Idx, uint8_t Decr=1)
+   { uint8_t Rank=Packet[Idx].Rank; if(Rank==0) return;
+     if(Decr>Rank) Decr=Rank;
+     Rank-=Decr; Sum-=Decr;
+     if(Rank<Low) { Low=Rank; LowIdx=Idx; }
+     Packet[Idx].Rank=Rank; }
+
    uint8_t Print(char *Out)
    { uint8_t Len=0;
      for(uint8_t Idx=0; Idx<Size; Idx++)
-     { Out[Len++]=' '; Len+=Format_Hex(Out+Len, Packet[Idx].Rank); }
+     { uint8_t Rank=Packet[Idx].Rank;
+       Out[Len++]=' '; Len+=Format_Hex(Out+Len, Rank);
+       if(Rank)
+       { Out[Len++]='/'; Len+=Format_Hex(Out+Len, Packet[Idx].getAddressAndType() ); }
+     }
      Out[Len++]=' '; Len+=Format_Hex(Out+Len, Sum);
      Out[Len++]='/'; Len+=Format_Hex(Out+Len, LowIdx);
      Out[Len++]='\n'; Out[Len]=0; return Len; }

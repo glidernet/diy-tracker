@@ -123,7 +123,9 @@ static void ProcBaro()
         int32_t StdAltitude = Atmosphere::StdAltitude((Pressure+2)>>2);  // [0.1 m]
         int32_t ClimbRate4sec = ((Pressure-PressDelay.Input(Pressure))*PLR)/800; // [0.01m/sec] climb rate over 4 sec.
 #ifdef WITH_BEEPER
-        VarioSound(ClimbRate);                                           // calc. residues => noise level
+        VarioSound(ClimbRate);
+        // if(abs(ClimbRate4sec)>50) VarioSound(ClimbRate);
+	//                      else VarioSound(2*ClimbRate4sec);
 #endif
         if( (Phase>=500) && GPS_TimeSinceLock)
         { PressAver.Process(Pressure);                                   // [0.25 Pa] pass pressure through low pass filter
