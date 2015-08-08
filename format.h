@@ -33,14 +33,27 @@ uint8_t Format_Hex( char *Output, uint32_t Word );
 uint8_t Format_Hex( char *Output, uint32_t Word, uint8_t Digits);
 
 
+   int8_t  Read_Hex1(char Digit);
+
    int8_t  Read_Dec1(char Digit);                  // convert single digit into an integer
+   // inline int8_t Read_Dec1(const char *Inp) { return Read_Dec1(Inp[0]); }
    int8_t  Read_Dec2(const char *Inp);             // convert two digit decimal number into an integer
    int16_t Read_Dec3(const char *Inp);             // convert three digit decimal number into an integer
    int16_t Read_Dec4(const char *Inp);             // convert three digit decimal number into an integer
 
   template <class Type>
+   int8_t Read_Hex(Type &Int, const char *Inp)            // convert variable number of digits hexadecimal number into an integer
+   { Int=0; int8_t Len=0;
+     if(Inp==0) return 0;
+     for( ; ; )
+     { int8_t Dig=Read_Hex1(Inp[Len]); if(Dig<0) break;
+       Int = (Int<<4) + Dig; Len++; }
+     return Len; }                                        // return number of characters read
+
+  template <class Type>
    int8_t Read_UnsDec(Type &Int, const char *Inp)         // convert variable number of digits unsigned decimal number into an integer
-   { Int=0; int Len=0;
+   { Int=0; int8_t Len=0;
+     if(Inp==0) return 0;
      for( ; ; )
      { int8_t Dig=Read_Dec1(Inp[Len]); if(Dig<0) break;
        Int = 10*Int + Dig; Len++; }
@@ -48,14 +61,18 @@ uint8_t Format_Hex( char *Output, uint32_t Word, uint8_t Digits);
 
   template <class Type>
    int8_t Read_SignDec(Type &Int, const char *Inp)        // convert signed decimal number into in16_t or int32_t
-   { char Sign=Inp[0]; int8_t Len=0;
+   { Int=0; int8_t Len=0;
+     if(Inp==0) return 0;
+     char Sign=Inp[0];
      if((Sign=='+')||(Sign=='-')) Len++;
      Len+=Read_UnsDec(Int, Inp); if(Sign=='-') Int=(-Int);
      return Len; }                                        // return number of characters read
 
   template <class Type>
    int8_t Read_Float1(Type &Value, const char *Inp)       // read floating point, take just one digit after decimal point
-   { char Sign=Inp[0]; int8_t Len=0; int8_t Dig;
+   { Value=0; int8_t Len=0;
+     if(Inp==0) return 0;
+     char Sign=Inp[0]; int8_t Dig;
      if((Sign=='+')||(Sign=='-')) Len++;
      Len+=Read_UnsDec(Value, Inp+Len); Value*=10;
      if(Inp[Len]!='.') goto Ret;
