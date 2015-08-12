@@ -149,11 +149,10 @@ static const  TickType_t  LogReopen = 20000;                      // [msec] when
 static VolatileFIFO<char, 512> Log_FIFO;
        SemaphoreHandle_t Log_Mutex;
 
-void Log_Write(char Byte)
-{ if(Log_FIFO.Write(Byte)>0) return;
-  while(Log_FIFO.Write(Byte)<=0) taskYIELD();
-  return; }
-
+void Log_Write(char Byte)                                        // write a byte into the log file buffer (FIFO)
+{ if(Log_FIFO.Write(Byte)>0) return;                             // if byte written into FIFO return
+  while(Log_FIFO.Write(Byte)<=0) vTaskDelay(1); }                // wait while the FIFO is full - we have to use delay not yield
+                                                                 // yield would not give time to lower priority task like log-writer
 static void Log_Open(void)
 { LogDate=get_fattime()>>16;                                      // get the FAT-time date part
   int32_t Day   =  LogDate    &0x1F;                              // get day, month, year
@@ -181,7 +180,12 @@ static void Log_Open(void)
 }
 
 void Log_WriteData(const char *Data, int DataLen)                 // write the Line to the log file
-{ if(LogErr)                                                      // if last operation was in error
+{ // xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
+  // Format_String(UART1_Write, "TaskCTRL: Log_WriteData: ");
+  // Format_UnsDec(UART1_Write, (uint32_t)DataLen, 1);
+  // Format_String(UART1_Write, "B \n");
+  // xSemaphoreGive(UART1_Mutex);
+  if(LogErr)                                                      // if last operation was in error
   { f_close(&LogFile);                                            // attempt to reopen the file system
     LogErr=f_mount(&FatFs, "", 0);                                // here it should quickly catch if the SD card is not there
     if(!LogErr) Log_Open();                                       // if file system OK, thne open the file
