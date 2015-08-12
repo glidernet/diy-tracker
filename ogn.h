@@ -476,9 +476,10 @@ class OGN_Packet          // Packet structure for the OGN tracker
 
 } ;
 
-class OGN_PrioQueue
+template<uint8_t Size=8>
+ class OGN_PrioQueue
 { public:
-   static const uint8_t Size = 8;            // number of packets kept
+   // static const uint8_t Size = 8;            // number of packets kept
    OGN_Packet           Packet[Size];        // OGN packets
    uint16_t             Sum;                 // sum of all ranks
    uint8_t              Low, LowIdx;         // lowest rank and index

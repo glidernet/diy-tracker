@@ -20,6 +20,8 @@
 
 #include "bitcount.h"
 
+#include "fifo.h"
+
 #include "uart1.h"                         // console UART
 // #include "adc.h"
 
@@ -89,9 +91,9 @@ static RFM69             TRX;    // radio transceiver
 static uint8_t RxPktData[26];    // received packet data
 static uint8_t RxPktErr [26];    // received packet error pattern
 
-static OGN_PrioQueue RelayQueue; // received packets and candidates to be relayed
-static OGN_Packet   RelayPacket; // received packet to be re-transmitted
-static LDPC_Decoder Decoder;     // error corrector for the Gallager code
+static OGN_PrioQueue<16> RelayQueue;  // received packets and candidates to be relayed
+static OGN_Packet        RelayPacket; // received packet to be re-transmitted
+static LDPC_Decoder      Decoder;     // error corrector for the OGN Gallager code
 
 static uint8_t TX_FreqChan=0;     // 0 = 868.2MHz, 1 = 868.4MHz
 static uint8_t TX_Credit  =0;     // counts transmitted packets vs. time to avoid using more than 1% of the time
@@ -100,6 +102,9 @@ static uint8_t RX_Packets=0;      // [packets] counts received packets
 static uint8_t RX_Idle   =0;      // [sec]     time the receiver did not get any packets
 static int32_t RX_RssiLow=0;      // [-0.5dBm] background noise level on lower RF channel
 static int32_t RX_RssiUpp=0;      // [-0.5dBm] background noise level on upper RF channel
+
+static Delay<uint8_t, 64> RX_CountDelay;
+static uint16_t           RX_Count64=0; // counts received packets for the last 64 seconds
 
       uint32_t RX_Random=0x12345678; // Random number from LSB of RSSI readouts
 
@@ -157,7 +162,11 @@ static uint8_t Receive(void)                                 // see if a packet 
       xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
       Format_String(UART1_Write, Line, Len);
       xSemaphoreGive(UART1_Mutex);
-      LogLine(Line);
+#ifdef WITH_SDLOG
+      xSemaphoreTake(Log_Mutex, portMAX_DELAY);
+      Format_String(Log_Write, Line, Len);
+      xSemaphoreGive(Log_Mutex);
+#endif
     }
   }
 
@@ -287,6 +296,9 @@ void vTaskRF(void* pvParameters)
   RX_Packets = 0;    // count received packets per every second (two time slots)
   RX_Idle    = 0;    // count receiver idle time (slots without any packets received)
 
+  RX_Count64 = 0;
+  RX_CountDelay.Clear();
+
   TX_FreqChan=0; TRX.WriteFreq(LowFreq+Parameters.RFchipFreqCorr);
   TRX.WriteSYNC(7, 7, OGN_SYNC); TRX.WriteMode(RFM69_OPMODE_RX);
   for( ; ; )
@@ -309,10 +321,12 @@ void vTaskRF(void* pvParameters)
           CurrPosPacket.setAcftType(Parameters.getAcftType());
           CurrPosPacket.Whiten(); CurrPosPacket.calcFEC();
           CurrPosPacket.setReady();
+	  // CurrPosPacket_Sec=GPS_Sec;
         }
       }
     } else                                                                     // if GPS lock is not there
-    { }                                                                        // we should invalidate position after some time
+    { // if( (CurrPosPacket_Sec == GPS_Sec) && () )
+    }                                                                          // we should invalidate position after some time
 /*
     TRX.WriteMode(RFM69_OPMODE_STDBY);                                         // switch to standy
     vTaskDelay(1);
@@ -366,10 +380,13 @@ void vTaskRF(void* pvParameters)
     uint8_t Time=GPS_Sec+30; if(Time>=60) Time-=60;
     RelayQueue.cleanTime(Time);                                                // clean relay queue past 30 seconds
 
+    RX_Count64 += RX_Packets;                                                  // add packets received
+    RX_Count64 -= RX_CountDelay.Input(RX_Packets);                             // subtract packets received 64 seconds ago
+
     { uint8_t Len=0;
       // memcpy(Line+Len, "$POGNR,", 7); Len+=7;                               // prepare NMEA of status report
       Len+=Format_String(Line+Len, "$POGNR,");
-      Len+=Format_UnsDec(Line+Len, RX_Packets);                                // number of packets received
+      Len+=Format_UnsDec(Line+Len, RX_Count64);                                // number of packets received
       Line[Len++]=',';
       Len+=Format_SignDec(Line+Len, -(RX_RssiLow/2));                          // average RF level on the lower frequency
       Line[Len++]=',';
@@ -383,30 +400,35 @@ void vTaskRF(void* pvParameters)
       // Line[Len++]=',';
       Len+=Format_UnsDec(Line+Len, (uint16_t)TX_Credit);
       Len+=NMEA_AppendCheckCRNL(Line, Len);                                    // append NMEA check-sum and CR+NL
-      LogLine(Line);
+      // LogLine(Line);
       xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
       Format_String(UART1_Write, Line, Len);                                   // send the NMEA out to the console
       // RelayQueue.Print(Line);
       // Format_String(UART1_Write, Line);
       xSemaphoreGive(UART1_Mutex);
+#ifdef WITH_SDLOG
+      xSemaphoreTake(Log_Mutex, portMAX_DELAY);
+      Format_String(Log_Write, Line, Len);                                     // send the NMEA out to the log file
+      xSemaphoreGive(Log_Mutex);
+#endif
       if(RX_Packets) RX_Idle=0;
                else  RX_Idle++;
       RX_Packets=0;                                                            // clear th ereceived packet count
     }
 
-    uint8_t OddSlot = GPS_Sec&1;                                               // odd slot: we take it for the relay
-    uint8_t DoRelay = RelayQueue.Sum>0;                                        // any packets for relaying ?
-    uint8_t DoSplit = DoRelay && (TX_Credit>=4);                               // split the 400ms time slot into 2x200ms.
+    uint8_t RelaySlot = GPS_Sec&1;                                             // odd slot: we take it for the relay
+    uint8_t RelayReady = RelayQueue.Sum>0;                                     // any packets for relaying ?
+    uint8_t SplitSlot = RelayReady && (TX_Credit>=4);                          // split the 400ms time slot into 2x200ms.
     GetRelayPacket();                                                          // get ready the packet to be relayed (if any)
 
     TX_Credit++; if(!TX_Credit) TX_Credit--;                                   // new half-slot => increment the transmission credit
 
-    if(DoSplit)                                                                // if split time slot
+    if(SplitSlot)                                                              // if split time slot
     { TimeSlot(200, CurrPosPacket, RX_RssiUpp);                                // send position
       TimeSlot(200, RelayPacket,   RX_RssiUpp); }                              // relay prepared packet
     else                                                                       // no split
-    { if(OddSlot && DoRelay) TimeSlot(400, RelayPacket,   RX_RssiUpp);         // if there is a packet for relaying: send it
-                        else TimeSlot(400, CurrPosPacket, RX_RssiUpp);         // otherwise send current position packet
+    { if(RelaySlot && RelayReady) TimeSlot(400, RelayPacket,   RX_RssiUpp);    // if there is a packet for relaying: send it
+                             else TimeSlot(400, CurrPosPacket, RX_RssiUpp);    // otherwise send current position packet
     }
 
     TX_FreqChan=0; TRX.WriteFreq(LowFreq+Parameters.RFchipFreqCorr);           // switch to lower frequency
@@ -415,12 +437,12 @@ void vTaskRF(void* pvParameters)
 
     TX_Credit++; if(!TX_Credit) TX_Credit--;                                   // new half slot => increment transmission credit
 
-    if(DoSplit)
+    if(SplitSlot)
     { TimeSlot(200, CurrPosPacket, RX_RssiLow);
       TimeSlot(200, RelayPacket,   RX_RssiLow); }
     else
-    { if(OddSlot && DoRelay) TimeSlot(400, RelayPacket,   RX_RssiLow);
-                        else TimeSlot(400, CurrPosPacket, RX_RssiLow);
+    { if(RelaySlot && RelayReady) TimeSlot(400, RelayPacket,   RX_RssiLow);
+                             else TimeSlot(400, CurrPosPacket, RX_RssiLow);
     }
 
   }

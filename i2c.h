@@ -4,6 +4,8 @@
 #include "stm32f10x_i2c.h"
 
 void I2C1_Configuration(uint32_t ClockSpeed=100000);
+void I2C1_Restart(uint32_t ClockSpeed=100000);
+void I2C1_Reset(void);
 
 uint8_t I2C_Write(I2C_TypeDef *I2Cx, uint8_t Addr, uint8_t Reg, const uint8_t *Data, uint8_t Len);
 

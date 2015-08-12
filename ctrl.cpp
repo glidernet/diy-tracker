@@ -18,6 +18,7 @@
 #include "gps.h"
 
 #ifdef WITH_SDCARD
+  #include "fifo.h"
   #include "diskio.h"
   #include "ff.h"
 #endif
@@ -144,7 +145,14 @@ static FATFS       FatFs;                                         // FatFS objec
 static FIL         LogFile;                                       // FatFS object for the log file
 static TickType_t  LogOpenTime;                                   // [msec] when was the log file (re)open
 static const  TickType_t  LogReopen = 20000;                      // [msec] when to close and re-open the log file
-xQueueHandle       LogQueue;                                      // queue that stores pointers to lines to be written to the log file
+
+static VolatileFIFO<char, 512> Log_FIFO;
+       SemaphoreHandle_t Log_Mutex;
+
+void Log_Write(char Byte)
+{ if(Log_FIFO.Write(Byte)>0) return;
+  while(Log_FIFO.Write(Byte)<=0) taskYIELD();
+  return; }
 
 static void Log_Open(void)
 { LogDate=get_fattime()>>16;                                      // get the FAT-time date part
@@ -157,61 +165,64 @@ static void Log_Open(void)
   LogErr=f_open(&LogFile, LogName, FA_WRITE | FA_OPEN_ALWAYS);    // open the log file
   if(LogErr)
   { // xSemaphoreTake(UART1_Mutex, portMAX_DELAY);                   // ask exclusivity on UART1
-    // Format_String(UART1_Write, "TaskCTRL: error when openning "); // report open error
+    // Format_String(UART1_Write, "TaskCTRL: cannot open "); // report open error
     // Format_String(UART1_Write, LogName);
     // Format_String(UART1_Write, "\n");
     // xSemaphoreGive(UART1_Mutex);                                  // give back UART1 to other tasks
     return ; }
   LogErr=f_lseek(&LogFile, f_size(&LogFile));                     // move to the end of the file (for append)
   LogOpenTime=xTaskGetTickCount();                                // record the system time when log was open
-
   if(!LogErr)
-  {
-    xSemaphoreTake(UART1_Mutex, portMAX_DELAY);                   // ask exclusivity on UART1
+  { xSemaphoreTake(UART1_Mutex, portMAX_DELAY);                   // ask exclusivity on UART1
     Format_String(UART1_Write, "TaskCTRL: writing to ");          // report open file name
     Format_String(UART1_Write, LogName);
     Format_String(UART1_Write, "\n");
-    xSemaphoreGive(UART1_Mutex);                                  // give back UART1 to other tasks
-  }
-
+    xSemaphoreGive(UART1_Mutex); }                                // give back UART1 to other tasks
 }
 
-static void Log_Write(const char *Line)                           // write the Line to the log file
+void Log_WriteData(const char *Data, int DataLen)                 // write the Line to the log file
 { if(LogErr)                                                      // if last operation was in error
   { f_close(&LogFile);                                            // attempt to reopen the file system
     LogErr=f_mount(&FatFs, "", 0);                                // here it should quickly catch if the SD card is not there
     if(!LogErr) Log_Open();                                       // if file system OK, thne open the file
+    else                                                          // if an error, report it
+    { // xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
+      // Format_String(UART1_Write, "TaskCTRL: cannot mount FAT filesystem\n"); // report mount error
+      // Format_String(UART1_Write, "\n");
+      // xSemaphoreGive(UART1_Mutex);
+    }
   }
-  if(LogErr)                                                      // if in error: quit
-  {
-    return ; }
-  // fputs(Line, &LogFile);
+  if(LogErr) return;                                              // if still in error: quit
   UINT WrLen;
-  LogErr=f_write(&LogFile, Line, strlen(Line), &WrLen);   // write the message line to the log file
-  if(LogErr)
-  { xSemaphoreTake(UART1_Mutex, portMAX_DELAY);                   // ask exclusivity on UART1
-    Format_String(UART1_Write, "TaskCTRL: error when writing to "); // report write error
-    Format_String(UART1_Write, LogName);
-    Format_String(UART1_Write, "\n");
-    xSemaphoreGive(UART1_Mutex);                                  // give back UART1 to other tasks
-  }
+  LogErr=f_write(&LogFile, Data, DataLen, &WrLen);                // write the data to the log file
+  if(!LogErr) return;
+  xSemaphoreTake(UART1_Mutex, portMAX_DELAY);                     // ask exclusivity on UART1
+  Format_String(UART1_Write, "TaskCTRL: error when writing to "); // report write error
+  Format_String(UART1_Write, LogName);
+  Format_String(UART1_Write, "\n");
+  xSemaphoreGive(UART1_Mutex);
 }
 
-static void Log_Check(void)                               // time check:
-{ if(LogErr) return;                                      // if last operation in error then don't do anything
-  TickType_t OpenTime = xTaskGetTickCount()-LogOpenTime;  // when did we (re)open the log file last time
+// static void Log_WriteLine(const char *Line) { Log_Write(Line, strlen(Line)); }
+
+static void Log_Check(void)                                    // time check:
+{ if(LogErr) return;                                           // if last operation in error then don't do anything
+  TickType_t TimeSinceOpen = xTaskGetTickCount()-LogOpenTime;  // when did we (re)open the log file last time
   if(LogDate)
-  { if(OpenTime<LogReopen) return; }                      // if fresh (less than 30 seconds) then nothing to do
+  { if(TimeSinceOpen<LogReopen) return; }                      // if fresh (less than 30 seconds) then nothing to do
   else
-  { if(OpenTime<(LogReopen/4)) return; }
-  f_close(&LogFile);                                      // close and reopen the log file when older than 10 seconds
+  { if(TimeSinceOpen<(LogReopen/4)) return; }
+  f_close(&LogFile);                                           // close and reopen the log file when older than 10 seconds
   Log_Open();
 }
 
-static void ProcessLog(void)                              // process the queue of lines to be written to the log
-{ char *Line;
-  while(xQueueReceive(LogQueue, &Line, 0)==pdTRUE)        // get the pointer to the line from the queue
-    Log_Write(Line);                                      // write the line to the log file
+static void ProcessLog(void)                                   // process the queue of lines to be written to the log
+{ for( ; ; )
+  { // char Byte; if(Log_FIFO.Read(Byte)<=0) break; Log_WriteData(&Byte, 1);
+    volatile char *Block; size_t Len=Log_FIFO.getReadBlock(Block); if(Len==0) break;
+    Log_WriteData((const char *)Block, Len);
+    Log_FIFO.flushReadBlock(Len);
+  }
   Log_Check();                                            // time check the log file
 }
 #endif // WITH_SDLOG
@@ -222,7 +233,9 @@ extern "C"
 void vTaskCTRL(void* pvParameters)
 {
 #ifdef WITH_SDLOG
-  LogQueue = xQueueCreate(8, sizeof(char *));
+  Log_Mutex = xSemaphoreCreateMutex();
+  Log_FIFO.Clear();
+
   LogErr=f_mount(&FatFs, "", 0);
   if(!LogErr) Log_Open();
 #endif

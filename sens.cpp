@@ -61,29 +61,13 @@ static Delay<int32_t, 8>        PressDelay; // 4-second delay for long-term clim
 
 static char Line[64];                       // line to prepare the barometer NMEA sentence
 
-
 static bool InitBaro()
-{
-
-// #ifdef WITH_BEEPER
-//   VarioSound(0);
-// #endif
-
-  Baro.Bus=I2C1;
-  BaroPipe.Clear  (90000);
-  BaroNoise.Set(3*16);                 // guess the pressure noise level
-
-                                       // initialize the GPS<->Baro correlator
-  AltAver.Set(0);                      // [m] Altitude at sea level
-  PressAver.Set(4*101300);             // [Pa] Pressure at sea level
-  PressDelay.Clear(4*101300);
-
+{ Baro.Bus=I2C1;
   uint8_t Err=Baro.CheckID();
   if(Err==0) Err=Baro.ReadCalib();
   if(Err==0) Err=Baro.AcquireRawTemperature();
   if(Err==0) { Baro.CalcTemperature(); AverPress=0; AverCount=0; }
-  return Err==0;
-}
+  return Err==0; }
 
 static void ProcBaro()
 {
@@ -98,7 +82,9 @@ static void ProcBaro()
     TickType_t Start=xTaskGetTickCount();
     uint8_t Err=Baro.AcquireRawTemperature();                             // measure temperature
     if(Err==0) { Baro.CalcTemperature(); AverPress=0; AverCount=0; }      // clear the average
-          else { PipeCount=0; return; }
+          else { PipeCount=0;
+	         I2C1_Restart(400000); vTaskDelay(20); InitBaro();        // try to recover I2C bus and baro
+		 return; }
 
     for(uint8_t Idx=0; Idx<24; Idx++)
     { uint8_t Err=Baro.AcquireRawPressure();                              // take pressure measurement
@@ -137,10 +123,12 @@ static void ProcBaro()
 
         uint8_t Frac = Sec%10;
         if(Frac==0)
-        { OgnPosition *PosPtr = GPS_getPosition(Sec/10);
-          PosPtr->StdAltitude = StdAltitude;
-          PosPtr->Temperature = Baro.Temperature;
-          PosPtr->setBaro(); }
+        { OgnPosition *PosPtr = GPS_getPosition(Sec/10);                 // get GPS position record for this second
+          if(PosPtr)                                                     // if found:
+          { PosPtr->StdAltitude = StdAltitude;                           // store standard pressure altitude
+            PosPtr->Temperature = Baro.Temperature;                      // and temperature in the GPS record
+            PosPtr->setBaro(); }
+        }
 
         uint8_t Len=0;                                                   // start preparing the barometer NMEA sentence
         Len+=Format_String(Line+Len, "$POGNB,");
@@ -159,10 +147,14 @@ static void ProcBaro()
         Len+=Format_SignDec(Line+Len, ClimbRate,   3, 2);                // [m/s] climb rate
         Line[Len++]=',';
         Len+=NMEA_AppendCheckCRNL(Line, Len);
-        LogLine(Line);                                                   // send NMEA sentence to the LOG
         xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
         Format_String(UART1_Write, Line, Len);                           // send NMEA sentence to the console (UART1)
         xSemaphoreGive(UART1_Mutex);
+#ifdef WITH_SDLOG
+        xSemaphoreTake(Log_Mutex, portMAX_DELAY);
+        Format_String(Log_Write, Line, Len);                             // send NMEA sentence to the log file
+        xSemaphoreGive(Log_Mutex);
+#endif
       }
 
     } else PipeCount=0;
@@ -174,15 +166,29 @@ extern "C"
 void vTaskSENS(void* pvParameters)
 { vTaskDelay(20);   // this delay seems to be essential - if you don't wait long enough, the BMP180 won't respond properly.
 
+// #ifdef WITH_BEEPER
+//   VarioSound(0);
+// #endif
+
 #ifdef WITH_BMP180
-  bool withBaro = InitBaro();
-#else
-  bool withBaro = false;
+  BaroPipe.Clear  (90000);
+  BaroNoise.Set(3*16);                 // guess the pressure noise level
+
+                                       // initialize the GPS<->Baro correlator
+  AltAver.Set(0);                      // [m] Altitude at sea level
+  PressAver.Set(4*101300);             // [Pa] Pressure at sea level
+  PressDelay.Clear(4*101300);
 #endif
+
+  bool Detected = InitBaro();
 
   xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
   Format_String(UART1_Write, "TaskSENS:");
-  if(withBaro) Format_String(UART1_Write, " BMP180");
+#ifdef WITH_BMP180
+  Format_String(UART1_Write, " BMP180: ");
+  if(Detected) Format_String(UART1_Write, " detected");
+         else  Format_String(UART1_Write, " not there !");
+#endif
   Format_String(UART1_Write, "\n");
   xSemaphoreGive(UART1_Mutex);
 

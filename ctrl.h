@@ -1,12 +1,12 @@
 #include "FreeRTOS.h"
 #include "task.h"
-#include "queue.h"
+// #include "queue.h"
 
 #ifdef WITH_SDLOG
-extern xQueueHandle LogQueue;
-inline void LogLine(char *Line, TickType_t Wait=2) { xQueueSend(LogQueue, &Line, Wait); }
-#else
-inline void LogLine(char *Line, TickType_t Wait=2) { }
+extern SemaphoreHandle_t Log_Mutex;
+void Log_Write(char Byte);
+// #else
+// inline void Log_Write(char Byte) { }
 #endif
 
 #ifdef __cplusplus

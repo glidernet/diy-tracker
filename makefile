@@ -15,8 +15,9 @@ TCHAIN = arm-none-eabi
 # knob ... user knob to set volume and options
 # config ... setting the aircraft-type, address-type, address, etc. through the serial port
 
-WITH_OPTS = beeper bmp180 knob config # for regular tracker with a knob and BMP180 but no SD card
-# WITH_OPTS = beeper bmp180 sdlog config # for the test system
+# WITH_OPTS = beeper bmp180 knob config # for regular tracker with a knob and BMP180 but no SD card
+# WITH_OPTS = beeper bmp180 sdlog config # for the test system (no knob but the SD card)
+WITH_OPTS = beeper bmp180 config
 
 MCU = STM32F103C8  # STM32F103C8 for no-name STM32F1 board, STM32F103CB for Maple mini
 

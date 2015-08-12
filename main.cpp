@@ -376,21 +376,21 @@ int main(void)
   prvSetupHardware();
 
   // CTRL: UART1, Console, SD log
-  xTaskCreate(vTaskCTRL,  "CTRL",   120, 0, tskIDLE_PRIORITY  , 0);
+  xTaskCreate(vTaskCTRL,  "CTRL",   128, 0, tskIDLE_PRIORITY  , 0);
 
 #ifdef WITH_KNOB
   // KNOB: read the knob (potentiometer wired to PB0)
-  xTaskCreate(vTaskKNOB,  "KNOB",    96, 0, tskIDLE_PRIORITY  , 0);
+  xTaskCreate(vTaskKNOB,  "KNOB",   100, 0, tskIDLE_PRIORITY  , 0);
 #endif
 
   // GPS: GPS NMEA/PPS, packet encoding
-  xTaskCreate(vTaskGPS,   "GPS",     96, 0, tskIDLE_PRIORITY+1, 0);
+  xTaskCreate(vTaskGPS,   "GPS",    100, 0, tskIDLE_PRIORITY+1, 0);
 
   // RF: RF chip, time slots, frequency switching, packet reception and error correction
-  xTaskCreate(vTaskRF,    "RF",      96, 0, tskIDLE_PRIORITY+2, 0);
+  xTaskCreate(vTaskRF,    "RF",     128, 0, tskIDLE_PRIORITY+2, 0);
 
   // SENS: BMP180 pressure, correlate with GPS
-  xTaskCreate(vTaskSENS,  "SENS",    96, 0, tskIDLE_PRIORITY+1, 0);
+  xTaskCreate(vTaskSENS,  "SENS",   100, 0, tskIDLE_PRIORITY+1, 0);
 
   vTaskStartScheduler();
 
@@ -431,7 +431,10 @@ int main(void)
 // + simple log system onto SD
 // + regular log close and auto-resume when card inserted
 // + DDMMYY in the log file name
+// . proper buffering
 // . IGC log
+// + FIFO as th elog file buffer
+// + file error crashes the system - resolved after the bug when baro was writing into a null pointer
 //
 // . auto-detect RFM69W or RFM69HW - possible at all ?
 // + read RF chip temperature
@@ -454,7 +457,7 @@ int main(void)
 // . support MS5611 pressure sensor
 // + correlate pressure and GPS altitude
 // . resolve extra dummy byte transfer for I2C_Read()
-// . recover from I2C hang-up
+// + recover from I2C hang-up
 // - BMP180 readout fails sometimes: initial delay after power-up or something else ?
 // + send pressure data in $POGNB
 // + vario sound
@@ -469,7 +472,7 @@ int main(void)
 //
 // + objective code for RF chip
 // . CC1101/CC1120/SPIRIT1 code
-// . properly handle TX position when GPS looses lock
+// . properly handle transmitted position when GPS looses lock
 // . NMEA commands to make sounds on the speaker
 //
 // + use TIM4.CH4 to drive the buzzer with double voltage

@@ -166,13 +166,16 @@ static void GPS_NMEA(void)                                                 // wh
   Position[PosIdx].ReadNMEA(NMEA);                                         // read position elements from NMEA
   if( NMEA.isGPRMC() || NMEA.isGPGGA() || NMEA.isGPGSA() || NMEA.isGPTXT() )
   { static char CRNL[3] = "\r\n";
-    LogLine((char *)NMEA.Data);
-    LogLine(CRNL);
     xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
-    Format_Bytes(UART1_Write, NMEA.Data, NMEA.Len); // UART1_Write('\r'); UART1_Write('\n');
+    Format_Bytes(UART1_Write, NMEA.Data, NMEA.Len);
     Format_Bytes(UART1_Write, (const uint8_t *)CRNL, 2);
     xSemaphoreGive(UART1_Mutex);
-    vTaskDelay(10);  // to give time for the log to write the data before it is overwritten by the next sentence
+#ifdef WITH_SDLOG
+    xSemaphoreTake(Log_Mutex, portMAX_DELAY);
+    Format_Bytes(Log_Write, NMEA.Data, NMEA.Len);
+    Format_Bytes(Log_Write, (const uint8_t *)CRNL, 2);
+    xSemaphoreGive(Log_Mutex);
+#endif
   }
 }
 
