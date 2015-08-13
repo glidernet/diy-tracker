@@ -808,11 +808,11 @@ class OgnPosition
      Packet.setTime(ShortTime);
      Packet.EncodeLatitude(Latitude);
      Packet.EncodeLongitude(Longitude);
-     Packet.EncodeAltitude((Altitude+5)/10);
      Packet.EncodeSpeed((Speed+1)>>1);
      Packet.EncodeHeading(Heading);
      Packet.EncodeClimbRate(ClimbRate);
      Packet.EncodeTurnRate(TurnRate);
+     Packet.EncodeAltitude((Altitude+5)/10);
      if(hasBaro())
      { int32_t AltDiff = (StdAltitude+5)/10-Packet.DecodeAltitude();;
        if(AltDiff>127) AltDiff=127;

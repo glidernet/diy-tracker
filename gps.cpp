@@ -141,8 +141,11 @@ static void GPS_BurstEnd(void)                                             // wh
   }
   uint8_t NextPosIdx = (PosIdx+1)&3;                                      // next position to be recorded
   Position[NextPosIdx].Clear();
-  Position[NextPosIdx].copyTime(Position[PosIdx]);                        // copy time from current position
-  Position[NextPosIdx].incrTime();                                        // increment time by 1 sec
+  int8_t Sec = Position[PosIdx].Sec;
+  Sec++; if(Sec>=60) Sec=0;
+  Position[NextPosIdx].Sec=Sec;
+  // Position[NextPosIdx].copyTime(Position[PosIdx]);                        // copy time from current position
+  // Position[NextPosIdx].incrTime();                                        // increment time by 1 sec
   PosIdx=NextPosIdx;                                                      // advance the index
 }
 
