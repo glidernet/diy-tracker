@@ -146,13 +146,13 @@ static FIL         LogFile;                                       // FatFS objec
 static TickType_t  LogOpenTime;                                   // [msec] when was the log file (re)open
 static const  TickType_t  LogReopen = 20000;                      // [msec] when to close and re-open the log file
 
-static VolatileFIFO<char, 512> Log_FIFO;
+static VolatileFIFO<char, 512> Log_FIFO;                         // buffer for SD-log
        SemaphoreHandle_t Log_Mutex;
 
 void Log_Write(char Byte)                                        // write a byte into the log file buffer (FIFO)
 { if(Log_FIFO.Write(Byte)>0) return;                             // if byte written into FIFO return
-  while(Log_FIFO.Write(Byte)<=0) vTaskDelay(1); }                // wait while the FIFO is full - we have to use delay not yield
-                                                                 // yield would not give time to lower priority task like log-writer
+  while(Log_FIFO.Write(Byte)<=0) vTaskDelay(1); }                // wait while the FIFO is full - we have to use vTaskDelay not TaskYIELD
+                                                                 // TaskYIELD would not give time to lower priority task like log-writer
 static void Log_Open(void)
 { LogDate=get_fattime()>>16;                                      // get the FAT-time date part
   int32_t Day   =  LogDate    &0x1F;                              // get day, month, year

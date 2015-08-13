@@ -139,10 +139,11 @@ static void GPS_BurstEnd(void)                                             // wh
   else                                                                    // posiiton not complete, no GPS lock
   { if(GPS_TimeSinceLock) { GPS_LockEnd(); GPS_TimeSinceLock=0; }
   }
-  int8_t Sec=Position[PosIdx].Sec;
-  PosIdx=(PosIdx+1)&3; Position[PosIdx].Clear();
-  if(Sec>=0) { Sec+=1; if(Sec>=60) Sec-=60; }
-  Position[PosIdx].Sec=Sec;
+  uint8_t NextPosIdx = (PosIdx+1)&3;                                      // next position to be recorded
+  Position[NextPosIdx].Clear();
+  Position[NextPosIdx].copyTime(Position[PosIdx]);                        // copy time from current position
+  Position[NextPosIdx].incrTime();                                        // increment time by 1 sec
+  PosIdx=NextPosIdx;                                                      // advance the index
 }
 
 OgnPosition *GPS_getPosition(void)
