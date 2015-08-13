@@ -621,6 +621,42 @@ class OgnPosition
      if(Satellites<=0) return 0;
      return 1; }
 
+   void copyTime(OgnPosition &RefPosition)           // copy HH:MM:SS.SSS from another record
+   { FracSec = RefPosition.FracSec;
+     Sec     = RefPosition.Sec;
+     Min     = RefPosition.Min;
+     Hour    = RefPosition.Hour; }
+
+   void copyDate(OgnPosition &RefPosition)           // copy YY:MM:DD from another record
+   { Day     = RefPosition.Day;
+     Month   = RefPosition.Month;
+     Year    = RefPosition.Year; }
+
+   void copyTimeDate(OgnPosition &RefPosition) { copyTime(RefPosition); copyDate(RefPosition); }
+
+   uint8_t incrTime(void)                            // increment HH:MM:SS by one second
+   { Sec++; if(Sec<60) return 0;
+     Sec=0;
+     Min++; if(Min<60) return 0;
+     Min=0;
+     Hour++; if(Hour<24) return 0;
+     Hour=0;
+     return 1; }                                     // return 1 if date needs to be incremented
+
+   uint8_t MonthDays(void)                           // number of days per month
+   { const uint16_t Table = 0x0CD5;
+     // const uint8_t Table[12] = { 31,28,31,30, 31,30,31,31, 30,31,30,31 };
+     if( (Month<1) || (Month>12) ) return 0;
+     if( Month==2) return 28+isLeapYear();
+     return 30 + ((Table>>(Month-1))&1); }
+
+   void incrDate(void)                               // increment YY:MM:DD by one day
+   { Day++; if(Day<MonthDays()) return;
+     Day=1; Month++; if(Month<12) return;
+     Month=1; Year++; }
+
+   void incrTimeData(void) { if(incrTime()) incrDate(); }
+
 #ifndef __AVR__ // there is not printf() with AVR
    void PrintDateTime(void) const { printf("%02d.%02d.%04d %02d:%02d:%05.2f", Day, Month, 2000+Year, Hour, Min, Sec+0.01*FracSec ); }
    void PrintTime(void)     const { printf("%02d:%02d:%05.2f", Hour, Min, Sec+0.01*FracSec ); }
@@ -889,80 +925,6 @@ class OgnPosition
      // printf("%s => [%d]\n", Seq, Params);
      return Params; }
 
-  private:
-
-/* in format.cpp
-   char static HexDigit(uint8_t Val)
-   { Val&=0x0F; return Val<10 ? '0'+Val : 'A'+Val-10; }
-
-   int8_t static ReadDec1(char Digit)             // convert single digit into an integer
-   { if(Digit<'0') return -1;                     // return -1 if not a decimal digit
-     if(Digit>'9') return -1;
-     return Digit-'0'; }
-
-   int8_t static ReadDec2(const char *Inp)           // convert two digit decimal number into an integer
-   { int8_t High=ReadDec1(Inp[0]); if(High<0) return -1;
-     int8_t Low =ReadDec1(Inp[1]); if(Low<0)  return -1;
-     return Low+10*High; }
-
-   int16_t static ReadDec3(const char *Inp)           // convert three digit decimal number into an integer
-   { int8_t High=ReadDec1(Inp[0]); if(High<0) return -1;
-     int8_t Mid=ReadDec1(Inp[1]);  if(Mid<0) return -1;
-     int8_t Low=ReadDec1(Inp[2]);  if(Low<0) return -1;
-     return (int16_t)Low + (int16_t)10*(int16_t)Mid + (int16_t)100*(int16_t)High; }
-
-   int16_t static ReadDec4(const char *Inp)           // convert three digit decimal number into an integer
-   { int16_t High=ReadDec2(Inp  ); if(High<0) return -1;
-     int16_t Low =ReadDec2(Inp+2); if(Low<0) return -1;
-     return Low + (int16_t)100*(int16_t)High; }
-
-  template <class Type>
-   int8_t static ReadUnsDec(Type &Int, const char *Inp)  // convert variable number of digits unsigned decimal number into an integer
-   { Int=0; int Len=0;
-     for( ; ; )
-     { int8_t Dig=ReadDec1(Inp[Len]); if(Dig<0) break;
-       Int = 10*Int + Dig; Len++; }
-     return Len; }                                       // return number of characters read
-
-  template <class Type>
-   int8_t static ReadSignDec(Type &Int, const char *Inp) // convert signed decimal number into in16_t or int32_t
-   { char Sign=Inp[0]; int8_t Len=0;
-     if((Sign=='+')||(Sign=='-')) Len++;
-     Len+=ReadUnsDec(Int, Inp); if(Sign=='-') Int=(-Int);
-     return Len; }                                       // return number of characters read
-
-  template <class Type>
-   int8_t static ReadFloat1(Type &Value, const char *Inp) // read floating point, take just one digit after decimal point
-   { char Sign=Inp[0]; int8_t Len=0; int8_t Dig;
-     if((Sign=='+')||(Sign=='-')) Len++;
-     Len+=ReadUnsDec(Value, Inp); Value*=10;
-     if(Inp[Len]!='.') goto Ret;
-     Len++;
-     Dig=ReadDec1(Inp[Len]); if(Dig<0) goto Ret;
-     Value+=Dig; Len++;
-     Dig=ReadDec1(Inp[Len]); if(Dig>=5) Value++;
-     Ret: if(Sign=='-') Value=(-Value); return Len; }
-*/
-/* moved to format.h
-  uint8_t static Format_UnsDec(char *Str, uint32_t Value, uint8_t MinDigits=1, uint8_t DecPoint=0)
-  { uint32_t Base; uint8_t Pos, Len=0;
-    for( Pos=10, Base=1000000000; Base; Base/=10, Pos--)
-    { uint8_t Dig;
-      if(Value>=Base)
-      { Dig=Value/Base; Value-=Dig*Base; }
-      else
-      { Dig=0; }
-      if(Pos==DecPoint) { (*Str++)='.'; Len++; }
-      if( (Pos<=MinDigits) || (Dig>0) || (Pos<=DecPoint) )
-      { (*Str++)='0'+Dig; Len++; MinDigits=Pos; }
-    }
-    return Len; }
-
-  uint8_t static Format_SignDec(char *Str, int32_t Value, uint8_t MinDigits=1, uint8_t DecPoint=0)
-  { if(Value<0) { (*Str++)='-'; Value=(-Value); }
-           else { (*Str++)='+'; }
-    return 1+Format_UnsDec(Str, Value, MinDigits, DecPoint); }
-*/
   public:
 
    uint32_t getUnixTime(void)                               // return the Unix timestamp (tested 2000-2099)
