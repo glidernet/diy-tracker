@@ -6,31 +6,24 @@
 
 #include <stdint.h>
 
+#define BITCOUNT_SAVE_FLASH
+
 // ==========================================================================
 // a table for fast bit counting
 
-const uint8_t ByteCount1s[256] = {
- 0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4,
- 1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5,
- 1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5,
- 2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
- 1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5,
- 2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
- 2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
- 3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
- 1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5,
- 2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
- 2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
- 3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
- 2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
- 3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
- 3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
- 4, 5, 5, 6, 5, 6, 6, 7, 5, 6, 6, 7, 6, 7, 7, 8
-} ;
+#ifdef BITCOUNT_SAVE_FLASH
+extern const uint8_t ByteCount1s[16];
+#else
+extern const uint8_t ByteCount1s[256];
+#endif
 
 // ==========================================================================
 
+#ifdef BITCOUNT_SAVE_FLASH
+inline uint8_t Count1s(uint8_t Byte) { return ByteCount1s[Byte&0x0F] + ByteCount1s[Byte>>4]; }
+#else
 inline uint8_t Count1s(uint8_t Byte) { return ByteCount1s[Byte]; }
+#endif
 
 inline uint8_t Count1s(int8_t Byte) { return Count1s((uint8_t)Byte); }
 
@@ -52,11 +45,7 @@ inline uint8_t Count1s(uint64_t LongWord)
 
 inline uint8_t Count1s(int64_t LongWord) { return Count1s((uint64_t)LongWord); }
 
-inline   int   Count1s(const uint8_t *Byte, int Bytes)
-{ int Count=0;
-  for( ; Bytes>0; Bytes--)
-  { Count += Count1s(*Byte++); }
-  return Count; }
+int   Count1s(const uint8_t *Byte, int Bytes);
 
 // ==========================================================================
 

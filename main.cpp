@@ -5,141 +5,90 @@
 #include "stm32f10x_flash.h"
 #include "stm32f10x_gpio.h"
 #include "stm32f10x_rcc.h"
-#include "stm32f10x_usart.h"
-#include "stm32f10x_spi.h"
-#include "stm32f10x_rtc.h"
 #include "stm32f10x_pwr.h"
 #include "stm32f10x_tim.h"
 #include "stm32f10x_adc.h"
-#include "stm32f10x_exti.h"
+// #include "stm32f10x_exti.h"
+#include "stm32f10x_iwdg.h"
 #include "misc.h"
 
 #include "format.h"
-
-#include "fifo.h"
-#include "ogn.h"
-#include "ubx.h"
 
 #include <FreeRTOS.h>
 #include <task.h>
 #include <semphr.h>
 #include <queue.h>
 
-// ======================================================================================
 
+#include "fifo.h"
+
+#include "uart1.h"
+#include "uart2.h"
 #include "adc.h"
-#include "beep.h"
+
+#ifdef WITH_BEEPER
+  #include "beep.h"
+#endif
+
+#ifdef WITH_I2C1
+  #include "i2c.h"
+#endif
+
+#include "flashsize.h"
+#include "uniqueid.h"
+
+#include "parameters.h"              // Parameters in Flash
+
+#include "gps.h"                     // GPS task:  read the GPS receiver
+#include "rf.h"                      // RF task:   transmit/received packets on radio
+#include "ctrl.h"                    // CTRL task: write log file to SD card
+#include "sens.h"                    // SENS task: read I2C sensors (baro for now)
+#include "knob.h"                    // KNOB task: read user knob
+
+FlashParameters Parameters; // parameters to be stored in Flash, on the last page
+
+// extern "C" void __cxa_pure_virtual (void) {} // to reduce the code size ?
+
+// ======================================================================================
+// to deal with the HC-06 Bluetooth module:
+//   http://wiki.mikrokopter.de/en/HC-06
+//   http://mcuoneclipse.com/2013/06/19/using-the-hc-06-bluetooth-module/
+// ask version:     AT+VERSION
+// set name:        AT+NAMEOGN
+// set pin:         AT+PIN1234
+// set baud 115200: AT+BAUD8
+// ======================================================================================
+
+// #include "adc.h"
 
 // ======================================================================================
 
-uint32_t * const   FlashStart = (uint32_t *)0x08000000;   // where the Flash memory starts
-uint16_t          *FlashSize  = (uint16_t *)0x1FFFF7E0;   // [kB] Flash memory size
-uint16_t inline getFlashSize(void) { return *FlashSize; }
-
-uint32_t          *UniqueID = (uint32_t*)(0x1FFFF7E8);
-uint32_t inline getUniqueID(uint8_t Idx) { return UniqueID[Idx]; }
+// ======================================================================================
 
 // ======================================================================================
 
-// Parameters stored in Flash
-class FlashParameters
-{ public:
-   uint32_t  AcftID;         // identification: Private:AcftType:AddrType:Address - must be different for every tracker
-    int16_t  RFchipFreqCorr; // [61Hz] frequency correction for crystal frequency offset
-    int8_t   RFchipTxPower;  // [dBm]
-    int8_t   RFchipTempCorr; // [degC]
-   uint32_t  CONbaud;        // [bps] Console baud rate
-   uint32_t  GPSbaud;        // [bps] GPS baud rate
+// Board pin-out: "no name" STM32F103C8T6, CPU chip facing up
 
-   // static const uint32_t Words=sizeof(FlashParameters)/sizeof(uint32_t);
-
-   uint32_t getAddress(void) const { return AcftID&0x00FFFFFF; }
-   uint8_t getAddrType(void) const { return (AcftID>>24)&0x03; }
-   uint8_t getAcftType(void) const { return (AcftID>>26)&0x0F; }
-   uint8_t getNoTrack (void) const { return (AcftID>>30)&0x01; }
-   uint8_t getStealth (void) const { return (AcftID>>31)&0x01; }
-
-   void setAddress (uint32_t Address)  { AcftID = (AcftID&0xFF000000) | (Address&0x00FFFFFF); }
-   void setAddrType(uint8_t  AddrType) { AcftID = (AcftID&0xFCFFFFFF) | ((uint32_t)(AddrType&0x03)<<24); }
-   void setAcftType(uint8_t  AcftType) { AcftID = (AcftID&0xC3FFFFFF) | ((uint32_t)(AcftType&0x0F)<<26); }
-   void setNoTrack(void) { AcftID |= 0x40000000; }
-   void clrNoTrack(void) { AcftID &= 0xBFFFFFFF; }
-   void setStealth(void) { AcftID |= 0x80000000; }
-   void clrStealth(void) { AcftID &= 0x7FFFFFFF; }
-
- public:
-  void setDefault(void)
-  { AcftID = UniqueID[0] ^ UniqueID[1] ^ UniqueID[2]; 
-    AcftID = 0x07000000 | (AcftID&0x00FFFFFF);
-    RFchipFreqCorr =   0;
-    RFchipTxPower  = +14; // +13dBm for RFM69W and +14dBm for RFM69HW - at this time we cannot recognize which RF chip is being used
-    RFchipTempCorr =   0;
-    CONbaud  = 115200;
-    GPSbaud  =   9600;
-  }
-
-  uint32_t static CheckSum(const uint32_t *Word, uint32_t Words)
-  { uint32_t Check=0x12345678;
-    for(uint32_t Idx=0; Idx<Words; Words++)
-    { Check+=Word[Idx]; }
-    return Check; }
-
-  uint32_t CheckSum(void) const
-  { return CheckSum((uint32_t *)this, sizeof(FlashParameters)/sizeof(uint32_t) ); }
-
-  static uint32_t *DefaultFlashAddr(void) { return FlashStart+((uint32_t)(getFlashSize()-1)<<8); }
-
-  int8_t ReadFromFlash(uint32_t *Addr=0)
-  { if(Addr==0) Addr = DefaultFlashAddr();
-    const uint32_t Words=sizeof(FlashParameters)/sizeof(uint32_t);
-    uint32_t Check=CheckSum(Addr, Words);
-    if(Check!=Addr[Words]) return -1;
-    uint32_t *Dst = (uint32_t *)this;
-    for(uint32_t Idx=0; Idx<Words; Idx++)
-    { Dst[Idx] = Addr[Idx]; }
-    return 1; }
-
-  int8_t WriteToFlash(uint32_t *Addr=0) const
-  { if(Addr==0) Addr = DefaultFlashAddr();
-    const uint32_t Words=sizeof(FlashParameters)/sizeof(uint32_t);
-    FLASH_Unlock();
-    FLASH_ErasePage((uint32_t)Addr);
-    uint32_t *Data=(uint32_t *)this;
-    for(uint32_t Idx=0; Idx<Words; Idx++)
-    { FLASH_ProgramWord((uint32_t)Addr, Data[Idx]); Addr++; }
-    FLASH_ProgramWord((uint32_t)Addr, CheckSum(Data, Words) );
-    FLASH_Lock();
-    if(CheckSum(Addr, Words)!=Addr[Words]) return -1;
-    return 0; }
-
-} ;
-
-FlashParameters Parameters;
-
-// ======================================================================================
-
-// Board pin-out: "no name" STM32F103R8T6, CPU chip facing up
-
-//                  Vbat     3.3V
-//           LED <- PC13     GND
-//           XTAL - PC14     5.0V
-//           XTAL - PC15     PB 9 TIM4.CH4
+//                  Vbat     3.3V           -> LED, I2C pull-up
+// LED <-           PC13     GND            <- Li-Ion battery
+//           XTAL - PC14     5.0V           <- Li-Ion battery
+//           XTAL - PC15     PB 9 TIM4.CH4  -> Buzzer
 // ENA <- TIM2.CH1  PA 0     PB 8 TIM4.CH3  -> Buzzer
-// PPS -> TIM2.CH2  PA 1     PB 7 I2C1.SDA <-> Baro/Gyro
-// GPS <- USART2.Tx PA 2     PB 6 I2C1.SCL <-> Baro/Gyro
+// PPS -> TIM2.CH2  PA 1     PB 7 I2C1.SDA <-> Baro/Gyro/...
+// GPS <- USART2.Tx PA 2     PB 6 I2C1.SCL <-> Baro/Gyro/...
 // GPS -> USART2.Rx PA 3     PB 5           -> RF.RESET
 // RF  <- SPI1.SS   PA 4     PB 4           <- RF.DIO0
 // RF  <- SPI1.SCK  PA 5     PB 3           <- RF.DIO4
 // RF  -> SPI1.MISO PA 6     PA15
-// RF  <- SPI1.MOSI PA 7     PA12 TIM1.ETR
-//        TIM3.CH3  PB 0     PA11 TIM1.CH4
-//        TIM3.CH4  PB 1     PA10 USART1.Rx <- Console
-// BT  <- USART3.Tx PB10     PA 9 USART1.Tx -> Console
-// BT  -> USART3.Rx PB11     PA 8 TIM1.CH1
-//                 RESET     PB15 SPI2.MOSI
-//                  3.3V     PB14 SPI2.MISO
-//                   GND     PB13 SPI2.SCK
-//                   GND     PB12 SPI2.SS
+// RF  <- SPI1.MOSI PA 7     PA12 TIM1.ETR <-> USB
+// POT -> TIM3.CH3  PB 0     PA11 TIM1.CH4 <-> USB
+//        TIM3.CH4  PB 1     PA10 USART1.Rx <- Console/BT
+//     <- USART3.Tx PB10     PA 9 USART1.Tx -> Console/BT
+//     -> USART3.Rx PB11     PA 8 TIM1.CH1
+//                 RESET     PB15 SPI2.MOSI -> SD card
+// RF  <-           3.3V     PB14 SPI2.MISO <- SD card
+// RF  <-            GND     PB13 SPI2.SCK  -> SD card
+//                   GND     PB12 SPI2.SS   -> SD card
 
 
 // Board pin-out: Maple Mini: CPU chip facing up
@@ -170,12 +119,18 @@ FlashParameters Parameters;
 
 // ======================================================================================
 
+// #define USE_XTAL
+
 void RCC_Configuration(void)
 {
-  RCC_DeInit ();                        // RCC system reset(for debug purpose)
-  RCC_HSEConfig (RCC_HSE_ON);           // Enable HSE (High Speed External clock = Xtal)
+  RCC_DeInit ();                                         // RCC system reset(for debug purpose)
+  RCC_HSEConfig (RCC_HSE_ON);                            // Enable HSE (High Speed External clock = Xtal)
+  uint32_t Timeout=80000;
+  while (RCC_GetFlagStatus(RCC_FLAG_HSERDY) == RESET)    // Wait till HSE is not ready
+  { Timeout--; if(Timeout==0) break; }                   // but it may never come up... as some boards have no Xtal !
+  if(Timeout==0) RCC_HSEConfig (RCC_HSE_OFF);            // if Timeout went down to zero: Xtal did not come up
 
-  while (RCC_GetFlagStatus(RCC_FLAG_HSERDY) == RESET);   // Wait till HSE is ready
+  // while (RCC_GetFlagStatus(RCC_FLAG_HSIRDY) == RESET);   // Wait till HSI is not ready
 
   RCC_HCLKConfig   (RCC_SYSCLK_Div1);                    // HCLK   = SYSCLK  (for AHB bus)
   RCC_PCLK2Config  (RCC_HCLK_Div1);                      // PCLK2  = HCLK    (for APB2 periph.  max. 72MHz)
@@ -186,16 +141,15 @@ void RCC_Configuration(void)
   FLASH_SetLatency(FLASH_Latency_2);                     // Flash 2 wait state
   FLASH_PrefetchBufferCmd(FLASH_PrefetchBuffer_Enable);  // Enable Prefetch Buffer
 
-  RCC_PLLConfig (RCC_PLLSource_HSE_Div2, RCC_PLLMul_15); // PLLCLK = 4MHz * 15 = 60 MHz
+  if(Timeout)                                            // if HSE came up: use it
+    RCC_PLLConfig (RCC_PLLSource_HSE_Div2, RCC_PLLMul_15); // PLLCLK = 4MHz * 15 = 60 MHz
+  else                                                   // if HSE did not come up: us internal oscilator
+    RCC_PLLConfig (RCC_PLLSource_HSI_Div2, RCC_PLLMul_15); // PLLCLK = 4MHz * 15 = 60 MHz
+
   RCC_PLLCmd (ENABLE);                                   // Enable PLL
   while (RCC_GetFlagStatus(RCC_FLAG_PLLRDY) == RESET);   // Wait till PLL is ready
   RCC_SYSCLKConfig (RCC_SYSCLKSource_PLLCLK);            // Select PLL as system clock source
   while (RCC_GetSYSCLKSource() != 0x08);                 // Wait till PLL is used as system clock source
-
-  // Enable USART1 and GPIOA clock
-  // RCC_APB2PeriphClockCmd (RCC_APB2Periph_USART1 | RCC_APB1Periph_USART2 | RCC_APB2Periph_GPIOA |
-  // RCC_APB2Periph_GPIOB | RCC_APB2Periph_GPIOC | RCC_APB2Periph_AFIO, ENABLE);
-  // RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
 }
 
 // ======================================================================================
@@ -218,7 +172,16 @@ void LED_Configuration (void)
 
 volatile uint8_t LED_PCB_Counter = 0;
 
-inline void LED_PCB_Flash(uint8_t Time=100) { LED_PCB_Counter=Time; } // [ms]
+void LED_PCB_Flash(uint8_t Time=100) { LED_PCB_Counter=Time; } // [ms]
+
+static void LED_PCB_TimerCheck(void)
+{ uint8_t Counter=LED_PCB_Counter;
+  if(Counter)
+  { Counter--;
+    if(Counter) LED_PCB_On();
+           else LED_PCB_Off();
+    LED_PCB_Counter=Counter; }
+}
 
 // ======================================================================================
 // source:
@@ -250,194 +213,22 @@ inline void LED_PCB_Flash(uint8_t Time=100) { LED_PCB_Counter=Time; } // [ms]
 
 // ------------------------------------------------------------------------------------------
 
-VolatileFIFO<uint8_t, 32> UART1_RxFIFO;
-VolatileFIFO<uint8_t, 32> UART1_TxFIFO;
-
-// UART1 pins:
-// PA8 	USART1_CK
-// PA11 USART1_CTS
-// PA12 USART1_RTS
-// PA9 	USART1_TX
-// PA10 USART1_RX
-
-void UART1_Configuration (int BaudRate=115200)
-{
-  GPIO_InitTypeDef  GPIO_InitStructure;
-  USART_InitTypeDef USART_InitStructure;
-  USART_ClockInitTypeDef USART_ClockInitStructure;
-
-  RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART1 | RCC_APB2Periph_GPIOA, ENABLE);
-
-  GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_10;          // Configure USART1 Rx (PA10) as input floating
-  GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_IN_FLOATING;
-  GPIO_Init(GPIOA, &GPIO_InitStructure);
-
-  GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_9;           // Configure USART1 Tx (PA9) as alternate function push-pull
-  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-  GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_AF_PP;
-  GPIO_Init(GPIOA, &GPIO_InitStructure);
-
-  USART_InitStructure.USART_BaudRate            = BaudRate; // UART1 at 115200 bps (console/debug/data exchange)
-  USART_InitStructure.USART_WordLength          = USART_WordLength_8b;
-  USART_InitStructure.USART_StopBits            = USART_StopBits_1;
-  USART_InitStructure.USART_Parity              = USART_Parity_No ;
-  USART_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
-  USART_InitStructure.USART_Mode                = USART_Mode_Rx | USART_Mode_Tx;
-  USART_ClockInitStructure.USART_Clock          = USART_Clock_Disable;
-  USART_ClockInitStructure.USART_CPOL           = USART_CPOL_Low;
-  USART_ClockInitStructure.USART_CPHA           = USART_CPHA_2Edge;
-  USART_ClockInitStructure.USART_LastBit        = USART_LastBit_Disable;
-  USART_Init     (USART1, &USART_InitStructure);
-  USART_ClockInit(USART1, &USART_ClockInitStructure);   // write parameters
-  UART1_RxFIFO.Clear(); UART1_TxFIFO.Clear();
-  USART_Cmd(USART1, ENABLE);                            // Enable USART1
-  USART_ITConfig(USART1, USART_IT_RXNE, ENABLE);        // Enable Rx-not-empty interrupt
-  NVIC_EnableIRQ(USART1_IRQn);
-}
-
-int  inline UART1_TxDone(void)    { return USART_GetFlagStatus(USART1, USART_FLAG_TC)   != RESET; }
-int  inline UART1_TxEmpty(void)   { return USART_GetFlagStatus(USART1, USART_FLAG_TXE)  != RESET; }
-int  inline UART1_RxReady(void)   { return USART_GetFlagStatus(USART1, USART_FLAG_RXNE) != RESET; }
-
-void inline UART1_TxChar(char ch) { USART_SendData(USART1, ch); }
-char inline UART1_RxChar(void)    { return (uint8_t)USART_ReceiveData(USART1); }
-
-// int inline UART1_TxEmpty(void)    { return USART1->SR & USART_FLAG_TXE; }
-
-#ifdef __cplusplus
-  extern "C"
-#endif
-void USART1_IRQHandler(void)
-{ if(USART_GetITStatus(USART1, USART_IT_RXNE) != RESET)
-   while(UART1_RxReady()) { uint8_t Byte=UART1_RxChar(); UART1_RxFIFO.Write(Byte); } // write received bytes to the RxFIFO
-  if(USART_GetITStatus(USART1, USART_IT_TXE) != RESET)
-   while(UART1_TxEmpty())
-  { uint8_t Byte;
-    if(UART1_TxFIFO.Read(Byte)<=0) { USART_ITConfig(USART1, USART_IT_TXE, DISABLE); break; }
-    UART1_TxChar(Byte); }
-  // USART_ClearITPendingBit(USART1,USART_IT_RXNE);
-  // if other UART1 interrupt sources ...
-  // USART_ClearITPendingBit(USART1, USART_IT_TXE);
-}
-
-inline int UART1_Read(uint8_t &Byte) { return UART1_RxFIFO.Read(Byte); } // return number of bytes read (0 or 1)
-
-inline void UART1_TxKick(void) { USART_ITConfig(USART1, USART_IT_TXE, ENABLE); }
-
-void UART1_Write(char Byte)
-{ if(UART1_TxFIFO.isEmpty()) { UART1_TxFIFO.Write(Byte); UART1_TxKick(); return; }
-  if(UART1_TxFIFO.Write(Byte)>0) return;
-  UART1_TxKick();
-  while(UART1_TxFIFO.Write(Byte)<=0) taskYIELD();
-  return; }
-
 // ------------------------------------------------------------------------------------------
 
-VolatileFIFO<uint8_t, 32> UART2_RxFIFO;
-VolatileFIFO<uint8_t, 32> UART2_TxFIFO;
-
-// UART2 pins:
-// PA4 	USART2_CK
-///PA0 	USART2_CTS
-// PA1 	USART2_RTS
-// PA2 	USART2_TX
-// PA3 	USART2_RX
-
-void UART2_Configuration (int BaudRate=9600)
-{
-  GPIO_InitTypeDef  GPIO_InitStructure;
-  USART_InitTypeDef USART_InitStructure;
-  USART_ClockInitTypeDef USART_ClockInitStructure;
-
-  RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
-  RCC_APB1PeriphClockCmd(RCC_APB1Periph_USART2,ENABLE);
-
-  GPIO_InitStructure.GPIO_Pin = GPIO_Pin_2;             // Configure USART2 Tx (PA.2) as alternate function push-pull
-  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-  GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
-  GPIO_Init(GPIOA, &GPIO_InitStructure);
- 
-  GPIO_InitStructure.GPIO_Pin = GPIO_Pin_3;               // Configure USART2 Rx (PA.3) as input floating
-  GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
-  GPIO_Init(GPIOA, &GPIO_InitStructure);
-
-  USART_InitStructure.USART_BaudRate            = BaudRate; // UART2 at 9600bps (GPS)
-  USART_InitStructure.USART_WordLength          = USART_WordLength_8b;
-  USART_InitStructure.USART_StopBits            = USART_StopBits_1;
-  USART_InitStructure.USART_Parity              = USART_Parity_No;
-  USART_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
-  USART_InitStructure.USART_Mode                = USART_Mode_Rx | USART_Mode_Tx;
-  USART_ClockInitStructure.USART_Clock          = USART_Clock_Disable;
-  USART_ClockInitStructure.USART_CPOL           = USART_CPOL_Low;
-  USART_ClockInitStructure.USART_CPHA           = USART_CPHA_2Edge;
-  USART_ClockInitStructure.USART_LastBit        = USART_LastBit_Disable;
-  USART_Init     (USART2, &USART_InitStructure);
-  USART_ClockInit(USART2, &USART_ClockInitStructure);   // write parameters
-  UART2_RxFIFO.Clear(); UART2_TxFIFO.Clear();
-  USART_Cmd(USART2, ENABLE);                            // Enable USART2
-  USART_ITConfig(USART2, USART_IT_RXNE, ENABLE);
-  NVIC_EnableIRQ(USART2_IRQn);
-}
-
-int  inline UART2_TxDone(void)    { return USART_GetFlagStatus(USART2, USART_FLAG_TC)   != RESET; }
-int  inline UART2_TxEmpty(void)   { return USART_GetFlagStatus(USART2, USART_FLAG_TXE)  != RESET; }
-int  inline UART2_RxReady(void)   { return USART_GetFlagStatus(USART2, USART_FLAG_RXNE) != RESET; }
-
-void inline UART2_TxChar(char ch) { USART_SendData(USART2, ch); }
-char inline UART2_RxChar(void)    { return (uint8_t)USART_ReceiveData(USART2); }
-
-#ifdef __cplusplus
-  extern "C"
-#endif
-void USART2_IRQHandler(void)
-{ if(USART_GetITStatus(USART2, USART_IT_RXNE) != RESET)
-   while(UART2_RxReady()) { uint8_t Byte=UART2_RxChar(); UART2_RxFIFO.Write(Byte); } // write received bytes to the RxFIFO
-  if(USART_GetITStatus(USART2, USART_IT_TXE) != RESET)
-   while(UART2_TxEmpty())
-  { uint8_t Byte;
-    if(UART2_TxFIFO.Read(Byte)<=0) { USART_ITConfig(USART2, USART_IT_TXE, DISABLE); break; }
-    UART2_TxChar(Byte); }
-  // USART_ClearITPendingBit(USART2, USART_IT_TC);
-}
-
-inline int UART2_Read(uint8_t &Byte) { return UART2_RxFIFO.Read(Byte); }
-
-inline void UART2_TxKick(void) { USART_ITConfig(USART2, USART_IT_TXE, ENABLE); }
-
-void UART2_Write(char Byte)
-{ if(UART2_TxFIFO.isEmpty()) { UART2_TxFIFO.Write(Byte); UART2_TxKick(); return; }
-  if(UART2_TxFIFO.Write(Byte)>0) return;
-  UART2_TxKick();
-  while(UART2_TxFIFO.Write(Byte)<=0) taskYIELD();
-  return; }
-
-// Note: UARTx_Write() can only be used after the RTOS is started as they use taskYIELD()
-
 // ======================================================================================
 
 // ======================================================================================
 
 // ======================================================================================
 
-#include "rtc.h"
+// #include "rtc.h"
 
 // ======================================================================================
 
+/*
 void NVIC_Configuration (void)
-{ 
+{
   NVIC_InitTypeDef NVIC_InitStructure;
-
-  NVIC_InitStructure.NVIC_IRQChannel = USART1_IRQn;                  // Enable the USART1 Interrupt
-  NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
-  NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
-  NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-  NVIC_Init(&NVIC_InitStructure);
-
-  NVIC_InitStructure.NVIC_IRQChannel = USART2_IRQn;                  // Enable the USART2 Interrupt
-  NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
-  NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
-  NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-  NVIC_Init(&NVIC_InitStructure);
 
   NVIC_InitStructure.NVIC_IRQChannel = RTC_IRQn;                     // Enable the RTC Interrupt
   NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
@@ -445,34 +236,8 @@ void NVIC_Configuration (void)
   NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
   NVIC_Init(&NVIC_InitStructure);
 }
-
+*/
 // ======================================================================================
-
-SemaphoreHandle_t UART1_Mutex = 0;
-
-#include "gps.h" // GPS task
-#include "rf.h"  // RF chip and RF task
-
-// ======================================================================================
-
-#ifdef __cplusplus
-  extern "C"
-#endif
-void vTaskCTRL(void* pvParameters)
-{ 
-  UART1_Mutex = xSemaphoreCreateMutex();
-  vTaskDelay(5);
-  xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
-  Format_String(UART1_Write, "TaskCTRL: MCU ID: ");
-  Format_Hex(UART1_Write, UniqueID[0]); UART1_Write(' ');
-  Format_Hex(UART1_Write, UniqueID[1]); UART1_Write(' ');
-  Format_Hex(UART1_Write, UniqueID[2]); UART1_Write(' ');
-  Format_UnsDec(UART1_Write, getFlashSize()); Format_String(UART1_Write, "kB\n");
-  xSemaphoreGive(UART1_Mutex);
-  while(1)
-  { vTaskDelay(1);
-  }
-}
 
 // ======================================================================================
 
@@ -502,76 +267,130 @@ void SysTick_Handler(void) { xPortSysTickHandler(); }
 */
 // ======================================================================================
 
-#ifdef __cplusplus
-  extern "C"
-#endif
+#ifdef WITH_BEEPER
+
+uint8_t  Vario_Note=0x00; // 0x40;
+uint16_t Vario_Period=800;
+uint16_t Vario_Fill=50;
+
+static volatile uint16_t Vario_Time=0;
+
+static volatile uint8_t Play_Note=0;             // Note being played
+static volatile uint8_t Play_Counter=0;          // time counter
+
+static VolatileFIFO<uint16_t, 8> Play_FIFO;      // queue of notes to play
+
+void Play(uint8_t Note, uint8_t Len)             // put a new not to play in the queue
+{ uint16_t Word = Note; Word<<=8; Word|=Len; Play_FIFO.Write(Word); }
+
+uint8_t Play_Busy(void) { return Play_Counter; } // is a note being played right now ?
+
+static void Play_TimerCheck(void)                // every ms serve the note playing
+{ uint8_t Counter=Play_Counter;
+  if(Counter)                                    // if counter non-zero
+  { Counter--;                                   // decrement it
+    if(!Counter) Beep_Note(Play_Note=0x00);      // if reached zero, stop playing the note
+  }
+  if(!Counter)                                   // if counter reached zero
+  { if(!Play_FIFO.isEmpty())                     // check for notes in the queue
+    { uint16_t Word=0; Play_FIFO.Read(Word);     // get the next note
+      Beep_Note(Play_Note=Word>>8); Counter=Word&0xFF; }   // start playing it, load counter with the note duration
+  }
+  Play_Counter=Counter;
+
+  uint16_t Time=Vario_Time;
+  Time++; if(Time>=Vario_Period) Time=0;
+  Vario_Time = Time;
+
+  if(Counter==0)                            // when no notes are being played, make the vario sound
+  { if(Time<=Vario_Fill)
+    { if(Play_Note!=Vario_Note) Beep_Note(Play_Note=Vario_Note); }
+    else
+    { if(Play_Note!=0) Beep_Note(Play_Note=0x00); }
+  }
+}
+
+#endif // WITH_BEEPER
+
+// ======================================================================================
+
 void prvSetupHardware(void)
 { RCC_Configuration();
 
-  NVIC_Configuration();
+  // NVIC_Configuration();
+
+  if(Parameters.ReadFromFlash()<0) // read parameters from Flash
+  { Parameters.setDefault();       // if nov valid: set defaults
+    Parameters.WriteToFlash(); }   // and write the defaults back to Flash
+
+  // to overwrite parameters
+  // Parameters.setTxTypeHW();
+  // Parameters.setTxPower(+14); // for RFM69HW (H = up to +20dBm Tx power)
+  // Parameters.WriteToFlash();
+
+  UART1_Configuration(Parameters.CONbaud); // Console/Bluetooth serial adapter
+
+  UART2_Configuration(Parameters.GPSbaud); // GPS UART
+  GPS_Configuration();                     // GPS PPS and Enable
+
+#ifdef WITH_I2C1
+  I2C1_Configuration(400000);              // 400kHz I2C bus speed
+#endif
+
+  SPI1_Configuration();                    // SPI1 for the RF chip
+  RFM69_GPIO_Configuration();              // RFM69(H)W Reset/DIO0/...
+  ADC_Configuration();                     // to measure Vref and CPU temp.
 
   LED_Configuration();
 
-  if(Parameters.ReadFromFlash()<0)
-  { Parameters.setDefault();
-    Parameters.WriteToFlash(); }
-
-  UART1_Configuration(Parameters.CONbaud);
-  UART2_Configuration(Parameters.GPSbaud);
-  GPS_Configuration();
-
+#ifdef WITH_BEEPER
   Beep_Configuration();
-  // RTC_Configuration();
+#endif
 
-  SPI1_Configuration();
-  RFM69_GPIO_Configuration();
-
-  ADC_Configuration();
-
-  // to overwrite parameters
-  // Parameters.RFchipTxPower = +14; // for RFM69HW (H = up to +20dBm Tx power)
-  // Parameters.WriteToFlash();
+  // setup watch-dog
+  IWDG_WriteAccessCmd(IWDG_WriteAccess_Enable);
+  IWDG_SetPrescaler(IWDG_Prescaler_8);              // about 40kHz/8 = 5kHz counter
+  IWDG_SetReload(250);                              // reload with 250 thus 50ms timeout ?
+  IWDG_ReloadCounter();                             // reload timer = reset the watch-dog
+  IWDG_Enable();                                    // enable RESET at timeout
 }
 
-#ifdef __cplusplus
-  extern "C"
-#endif
+extern "C"
 void vApplicationIdleHook(void) // when RTOS is idle: should call "sleep until an interrupt"
-{ __WFI(); }
+{ __WFI(); }                    // wait-for-interrupt
 
-#ifdef __cplusplus
-  extern "C"
-#endif
+extern "C"
 void vApplicationTickHook(void) // RTOS timer tick hook
-{ uint8_t Counter=LED_PCB_Counter;
-  if(Counter)
-  { Counter--;
-    if(Counter) LED_PCB_On();
-           else LED_PCB_Off();
-    LED_PCB_Counter=Counter; }
+{
+  IWDG_ReloadCounter(); // reset watch-dog at every tick (primitive, but enough to start)
+
+  LED_PCB_TimerCheck(); // LED flash periodic check
+
+#ifdef WITH_BEEPER
+  Play_TimerCheck();    // Play note periodic check
+#endif
 }
 
 int main(void)
-{ 
+{
   prvSetupHardware();
 
-  UART1_TxFIFO.Write('\r');
-  UART1_TxFIFO.Write('\n');
-  UART1_TxKick();
+  // CTRL: UART1, Console, SD log
+  xTaskCreate(vTaskCTRL,  "CTRL",   128, 0, tskIDLE_PRIORITY  , 0);
 
-/*
-  LED_PCB_On();
+#ifdef WITH_KNOB
+  // KNOB: read the knob (potentiometer wired to PB0)
+  xTaskCreate(vTaskKNOB,  "KNOB",   100, 0, tskIDLE_PRIORITY  , 0);
+#endif
 
-  UART1_TxFIFO.Write((const uint8_t *)"\r\nMini-Tracker\r\n", 16);
-  UART1_TxKick();
-  while(!UART1_TxEmpty());
+  // GPS: GPS NMEA/PPS, packet encoding
+  xTaskCreate(vTaskGPS,   "GPS",    100, 0, tskIDLE_PRIORITY+1, 0);
 
-  LED_PCB_Off();
-*/
+  // RF: RF chip, time slots, frequency switching, packet reception and error correction
+  xTaskCreate(vTaskRF,    "RF",     128, 0, tskIDLE_PRIORITY+2, 0);
 
-  xTaskCreate(vTaskCTRL,  "CTRL",  120, 0, tskIDLE_PRIORITY+2, 0);
-  xTaskCreate(vTaskGPS,   "GPS",   120, 0, tskIDLE_PRIORITY+2, 0);
-  xTaskCreate(vTaskRF,    "RF",    120, 0, tskIDLE_PRIORITY+2, 0);
+  // SENS: BMP180 pressure, correlate with GPS
+  xTaskCreate(vTaskSENS,  "SENS",   100, 0, tskIDLE_PRIORITY+1, 0);
 
   vTaskStartScheduler();
 
@@ -581,26 +400,87 @@ int main(void)
 }
 
 // lot of things to do:
-// . read NMEA user input
-// . set Parameters in Flash from NMEA
-// . send received positions to console
-// . packet retransmission: strategy
-// . send received positions to console as NMEA
-// . play melodies on events
-// . separate the UART code
+// + read NMEA user input
+// + set Parameters in Flash from $POGNS
+//
+// + send received positions to console
+// + send received positions to console as $POGNT
+// + print number of detected transmission errors
+// . avoid printing same position twice (from both time slots)
+// + send Rx noise and packet stat. as $POGNR
+//
 // . optimize receiver sensitivity
-// . AFC ?
-// . continues AGC/RSSI ?
-// . periodically refresh the RF chip config
-// . print task information for check up
-// . try to run on Maple Mini (there is more Flash, but likely no xtal)
-// . simple time/position log in Flash
-// . auto-detect RFM69W or RFM69HW
+// . use RF chip AFC or not ?
+// . user RF chip continues AGC/RSSI or not ?
+// + periodically refresh the RF chip config (after 60 seconds of Rx inactivity)
+//
+// . packet pools for queing
+// . separate task for FEC correction
+// . separate task for RX processing (retransmission decision)
+// . good packets go to RX, bad packets go to FEC first
+// + packet retransmission and strategy
+//
+// + queue for sounds to be played on the buzzer
+// + separate the UART code
+//
+// + use watchdog to restart in case of a hangup
+// + print heap and task information when Ctlr-C pressed on the console
+// . try to run on Maple Mini (there is more Flash, but visibly no xtal)
+//
+// + SD card slot and FatFS
+// + simple log system onto SD
+// + regular log close and auto-resume when card inserted
+// + DDMMYY in the log file name
+// . proper buffering
+// . IGC log
+// + FIFO as th elog file buffer
+// + file error crashes the system - resolved after the bug when baro was writing into a null pointer
+//
+// . auto-detect RFM69W or RFM69HW - possible at all ?
+// + read RF chip temperature
+// . compensate Rx/Tx frequency by RF chip temperature
+//
 // . measure the CPU temperature
-// . read RF chip temperature and compensate Rx/Tx frequency
-// . measure VCC voltage: low battery indicator
+// . measure VCC voltage: low battery indicator ?
+// + resolve unstable ADC readout
+//
 // . detect when VK16u6 GPS fails below 2.7V supply
-// . GPS try higher baud rates
-// . GPS auto-baud
-// . detect GPS stop (below 2.7V) and then sleep
+// . audible alert when GPS fails or absent ?
+// . GPS: set higher baud rates
+// . GPS: auto-baud
+// + GPS: keep functioning when GPGSA is not there
+// . check for loss of GPS data and declare fix loss
+// + keep/count time (from GPS)
+//
+// + connect BMP180 pressure sensor
+// . pressure sensor correction in Flash parameters ?
+// . support MS5611 pressure sensor
+// + correlate pressure and GPS altitude
+// . resolve extra dummy byte transfer for I2C_Read()
+// + recover from I2C hang-up
+// - BMP180 readout fails sometimes: initial delay after power-up or something else ?
+// + send pressure data in $POGNB
+// + vario sound
+// - adapt vario integration time to climb/sink
+// + separate task for BMP180 and other I2C sensors
+// + send standard/pressure altitude in the packet ?
+// . when measuring pressure avoid times when TX or LOG is active to reduce noise ?
+//
+// . stop transmission 60 sec after GPS lock is lost or mark the time as invalid
+// . audible alert when RF chip fails ?
+// + all hardware configure to main() before tasks start ?
+//
+// + objective code for RF chip
+// . CC1101/CC1120/SPIRIT1 code
+// . properly handle transmitted position when GPS looses lock
+// . NMEA commands to make sounds on the speaker
+//
+// + use TIM4.CH4 to drive the buzzer with double voltage
+// . read compass, gyro, accel.
+//
+// + int math into a single file
+// + bitcount: option to reduce code size: reduce lookup table from 256 to 16 bytes
+// . thermal circling detection
+// . measure/transmit/receive QNH
+// . measure/transmit/receive wind
 

@@ -1,3 +1,5 @@
+#ifndef __UBX_H__
+#define __UBX_H__
 
 // UBX Class packet numbers
 const uint8_t UBX_NAV = 0x01; // navigation
@@ -151,3 +153,5 @@ class UBX_NAV_TIMEUTC // Time in UTC
    uint8_t  sec;
    uint8_t  valid;    // bits: 0:ToW, 1:WN, 2:UTC
 } ;
+
+#endif // __UBX_H__
