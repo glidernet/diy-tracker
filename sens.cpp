@@ -178,9 +178,9 @@ void vTaskSENS(void* pvParameters)
   AltAver.Set(0);                      // [m] Altitude at sea level
   PressAver.Set(4*101300);             // [Pa] Pressure at sea level
   PressDelay.Clear(4*101300);
-#endif
 
   bool Detected = InitBaro();
+#endif
 
   xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
   Format_String(UART1_Write, "TaskSENS:");
