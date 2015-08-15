@@ -306,11 +306,11 @@ void vTaskRF(void* pvParameters)
 
     if(GPS_TimeSinceLock>2)                                                    // if GPS lock is already there for more than 2 seconds
     { OgnPosition *Position = GPS_getPosition();                               // get the most recent valid GPS position
-      if(Position)                                                             //
+      if(Position && Position->isComplete() && Position->isValid() )                                                             //
       { int8_t Sec=Position->Sec;
         Sec-=2; if(Sec<0) Sec+=60;
         OgnPosition *RefPos = GPS_getPosition(Sec);
-        if(RefPos)
+        if(RefPos && RefPos->isComplete() && RefPos->isValid() )
         { Position->calcDifferences(*RefPos);
           CurrPosPacket.setAddress(Parameters.getAddress());                     // prepare the current position packet
           CurrPosPacket.setAddrType(Parameters.getAddrType());

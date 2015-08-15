@@ -592,7 +592,8 @@ class OgnPosition
    { Flags=0; FixQuality=0; FixMode=0; PDOP=0; HDOP=0; VDOP=0;
      setDefaultDate(); setDefaultTime();
      Latitude=0; Longitude=0; Altitude=0; GeoidSeparation=0;
-     Speed=0; Heading=0; ClimbRate=0; TurnRate=0; /* Temperature=0; */ }
+     Speed=0; Heading=0; ClimbRate=0; TurnRate=0;
+     StdAltitude=0; Temperature=0; }
 
    void setDefaultDate() { Year=00; Month=1; Day=1; }
    void setDefaultTime() { Hour=0;  Min=0;   Sec=0; FracSec=0; }
@@ -608,17 +609,17 @@ class OgnPosition
    void clrBaro(void)           { Flags&=0xFD; }
 
    bool isTimeValid(void) const                      // is the GPS time-of-day valid ?
-   { return (Hour>=0) && (Min>=0) && (Sec>=0); }
+   { return (Hour>=0) && (Min>=0) && (Sec>=0); }     // all data must have been correctly read: negative means not correctly read)
 
    bool isDateValid(void) const                      // is the GPS date valid ?
    { return (Year>=0) && (Month>=0) && (Day>=0); }
 
    bool isValid(void) const                          // is GPS lock there ?
-   { if(!isTimeValid()) return 0;
-     if(!isDateValid()) return 0;
-     if(FixQuality==0) return 0;
+   { if(!isTimeValid()) return 0;                    // is GPS time valid/present ?
+     if(!isDateValid()) return 0;                    // is GPS date valid/present ?
+     if(FixQuality==0) return 0;                     // Fix quality must be 1=GPS or 2=DGPS
      if(FixMode==1) return 0;                        // if GSA says "no lock" (when GSA is not there, FixMode=0)
-     if(Satellites<=0) return 0;
+     if(Satellites<=0) return 0;                     // if number of satellites none or invalid
      return 1; }
 
    void copyTime(OgnPosition &RefPosition)           // copy HH:MM:SS.SSS from another record
@@ -719,10 +720,10 @@ class OgnPosition
 
    int8_t ReadGGA(NMEA_RxMsg &RxMsg)
    { if(RxMsg.Parms<14) return -1;                                                        // no less than 14 paramaters
-     if(ReadTime((const char *)RxMsg.ParmPtr(0))>0) setComplete(); else clrComplete();
-     FixQuality =Read_Dec1(*RxMsg.ParmPtr(5)); if(FixQuality<0) FixQuality=0;             // fix quality
+     if(ReadTime((const char *)RxMsg.ParmPtr(0))>0) setComplete(); else clrComplete();    // read time and check if same as the RMC says
+     FixQuality =Read_Dec1(*RxMsg.ParmPtr(5)); if(FixQuality<0) FixQuality=0;             // fix quality: 0=invalid, 1=GPS, 2=DGPS
      Satellites=Read_Dec2((const char *)RxMsg.ParmPtr(6));                                // number of satellites
-     if(Satellites<0) Satellites=Read_Dec1(RxMsg.ParmPtr(6)[0]); 
+     if(Satellites<0) Satellites=Read_Dec1(RxMsg.ParmPtr(6)[0]);
      if(Satellites<0) Satellites=0;
      ReadHDOP((const char *)RxMsg.ParmPtr(7));                                            // horizontal dilution of precision
      ReadLatitude(*RxMsg.ParmPtr(2), (const char *)RxMsg.ParmPtr(1));                     // Latitude
@@ -765,7 +766,7 @@ class OgnPosition
 
    int ReadRMC(NMEA_RxMsg &RxMsg)
    { if(RxMsg.Parms<12) return -1;                                                        // no less than 12 parameters
-     if(ReadTime((const char *)RxMsg.ParmPtr(0))>0) setComplete(); else clrComplete();
+     if(ReadTime((const char *)RxMsg.ParmPtr(0))>0) setComplete(); else clrComplete();    // read time and check if same as the GGA says
      if(ReadDate((const char *)RxMsg.ParmPtr(8))<0) setDefaultDate();                     // date
      ReadLatitude(*RxMsg.ParmPtr(3), (const char *)RxMsg.ParmPtr(2));                     // Latitude
      ReadLongitude(*RxMsg.ParmPtr(5), (const char *)RxMsg.ParmPtr(4));                    // Longitude
