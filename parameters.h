@@ -48,8 +48,11 @@ class FlashParameters
   { AcftID = UniqueID[0] ^ UniqueID[1] ^ UniqueID[2]; 
     AcftID = 0x07000000 | (AcftID&0x00FFFFFF);
     RFchipFreqCorr =         0; // [61Hz]
-    // RFchipTxPower  =        13; // [dBm] for RFM69W
+#ifdef WITH_RFM69W
+    RFchipTxPower  =        13; // [dBm] for RFM69W
+#else
     RFchipTxPower  = 0x80 | 14; // [dBm] for RFM69HW
+#endif
     RFchipTempCorr =         0; // [degC]
     CONbaud        =    115200; // [bps]
     GPSbaud        =      9600; // [bps]

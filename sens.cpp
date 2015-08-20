@@ -108,7 +108,7 @@ static void ProcBaro()
         int32_t Pressure=BaroPipe.Aver;                                  // [0.25 Pa]
         int32_t StdAltitude = Atmosphere::StdAltitude((Pressure+2)>>2);  // [0.1 m]
         int32_t ClimbRate4sec = ((Pressure-PressDelay.Input(Pressure))*PLR)/800; // [0.01m/sec] climb rate over 4 sec.
-#ifdef WITH_BEEPER
+#ifdef WITH_VARIO
         VarioSound(ClimbRate);
         // if(abs(ClimbRate4sec)>50) VarioSound(ClimbRate);
 	//                      else VarioSound(2*ClimbRate4sec);

@@ -10,15 +10,18 @@ TCHAIN = arm-none-eabi
 # i2c1 ... I2C-1 interface
 # sdcard ... SD card interface with FAT filesystem
 # bmp180 ... barometric pressure bmp180 sensor (selects i2c1 too)
+# beeper ... beeper
+# vario ... vario sound (selects beeper)
 # sdlog ... logging to sdcard (selects sdcard too)
-# beeper ... beeper (vario etc)
 # knob ... user knob to set volume and options
 # config ... setting the aircraft-type, address-type, address, etc. through the serial port
+# rfm69w ... for the lower tx power RF chip
+# relay ... with packet-relay code
 
-# WITH_OPTS = beeper bmp180 knob config # for regular tracker with a knob and BMP180 but no SD card
-# WITH_OPTS = beeper bmp180 sdlog config # for the test system (no knob but the SD card)
-# WITH_OPTS = beeper bmp180 config
-WITH_OPTS = beeper config
+# WITH_OPTS = beeper vario bmp180 knob  relay config # for regular tracker with a knob and BMP180 but no SD card
+# WITH_OPTS = beeper vario bmp180 sdlog relay config # for the test system (no knob but the SD card)
+# WITH_OPTS = beeper vario bmp180 relay config
+WITH_OPTS = beeper vario bmp180 config relay
 
 MCU = STM32F103C8  # STM32F103C8 for no-name STM32F1 board, STM32F103CB for Maple mini
 
@@ -89,6 +92,11 @@ ifneq ($(findstring sdcard,$(WITH_OPTS)),)
   C_SRC  += fatfs/ff.c
 endif
 
+ifneq ($(findstring vario,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_VARIO
+  WITH_OPTS += beeper
+endif
+
 ifneq ($(findstring beeper,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_BEEPER
   C_SRC += beep.cpp
@@ -100,6 +108,14 @@ endif
 
 ifneq ($(findstring config,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_CONFIG
+endif
+
+ifneq ($(findstring rfm69w,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_RFM69W
+endif
+
+ifneq ($(findstring relay,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_RELAY
 endif
 
 #-------------------------------------------------------------------------------
