@@ -1,0 +1,192 @@
+Cmp-Mod V01 Created by Cvpcb (2015-01-16 BZR 5376)-product   date = 20/06/2015 15:11:17
+
+BeginCmp
+TimeStamp = /557CAFA8;
+Reference = ANT1;
+ValeurCmp = SMA;
+IdModule  = connect:SIL-2;
+EndCmp
+
+BeginCmp
+TimeStamp = /558594F9;
+Reference = ANT2;
+ValeurCmp = CONN_1;
+IdModule  = connect:1pin;
+EndCmp
+
+BeginCmp
+TimeStamp = /557894B8;
+Reference = BARO1;
+ValeurCmp = BMP180;
+IdModule  = connect:SIL-4;
+EndCmp
+
+BeginCmp
+TimeStamp = /557C659B;
+Reference = CON1;
+ValeurCmp = CONS/BT;
+IdModule  = connect:SIL-4;
+EndCmp
+
+BeginCmp
+TimeStamp = /557C85B1;
+Reference = CON3;
+ValeurCmp = CONS/BT;
+IdModule  = connect:SIL-4;
+EndCmp
+
+BeginCmp
+TimeStamp = /55856DB2;
+Reference = Cpot1;
+ValeurCmp = 100nF;
+IdModule  = smd_capacitors:c_1206;
+EndCmp
+
+BeginCmp
+TimeStamp = /55788792;
+Reference = CPU1;
+ValeurCmp = STM32F103C8T6_board;
+IdModule  = dip_sockets:DIP-40__600_ELL;
+EndCmp
+
+BeginCmp
+TimeStamp = /557C68FE;
+Reference = Csup1;
+ValeurCmp = 100nF;
+IdModule  = smd_capacitors:c_1206;
+EndCmp
+
+BeginCmp
+TimeStamp = /557C777E;
+Reference = Csup2;
+ValeurCmp = 100nF;
+IdModule  = smd_capacitors:c_1206;
+EndCmp
+
+BeginCmp
+TimeStamp = /557C781B;
+Reference = Csup3;
+ValeurCmp = 100nF;
+IdModule  = smd_capacitors:c_1206;
+EndCmp
+
+BeginCmp
+TimeStamp = /557CB24C;
+Reference = Csup4;
+ValeurCmp = 100nF;
+IdModule  = smd_capacitors:c_1206;
+EndCmp
+
+BeginCmp
+TimeStamp = /55856A6B;
+Reference = Csup5;
+ValeurCmp = 100nF;
+IdModule  = smd_capacitors:c_1206;
+EndCmp
+
+BeginCmp
+TimeStamp = /558591DF;
+Reference = Csup6;
+ValeurCmp = 100nF;
+IdModule  = smd_capacitors:c_1206;
+EndCmp
+
+BeginCmp
+TimeStamp = /55788894;
+Reference = Dstat1;
+ValeurCmp = LED;
+IdModule  = connect:SIL-2;
+EndCmp
+
+BeginCmp
+TimeStamp = /5585830F;
+Reference = GND1;
+ValeurCmp = CONN_1;
+IdModule  = connect:1pin;
+EndCmp
+
+BeginCmp
+TimeStamp = /55858CB0;
+Reference = GND2;
+ValeurCmp = CONN_1;
+IdModule  = connect:1pin;
+EndCmp
+
+BeginCmp
+TimeStamp = /55858CE1;
+Reference = GND3;
+ValeurCmp = CONN_1;
+IdModule  = connect:1pin;
+EndCmp
+
+BeginCmp
+TimeStamp = /55858D13;
+Reference = GND4;
+ValeurCmp = CONN_1;
+IdModule  = connect:1pin;
+EndCmp
+
+BeginCmp
+TimeStamp = /55788D89;
+Reference = GPS1;
+ValeurCmp = VK16U6;
+IdModule  = connect:SIL-6;
+EndCmp
+
+BeginCmp
+TimeStamp = /558566ED;
+Reference = POT1;
+ValeurCmp = CTRL;
+IdModule  = connect:SIL-3;
+EndCmp
+
+BeginCmp
+TimeStamp = /557C9ADF;
+Reference = RF1;
+ValeurCmp = RFM69HW;
+IdModule  = RFM69HW:RFM69HW;
+EndCmp
+
+BeginCmp
+TimeStamp = /55788963;
+Reference = Rled1;
+ValeurCmp = 500;
+IdModule  = smd_capacitors:c_1206;
+EndCmp
+
+BeginCmp
+TimeStamp = /55789830;
+Reference = Rscl1;
+ValeurCmp = 10K;
+IdModule  = smd_capacitors:c_1206;
+EndCmp
+
+BeginCmp
+TimeStamp = /557897C7;
+Reference = Rsda1;
+ValeurCmp = 10K;
+IdModule  = smd_capacitors:c_1206;
+EndCmp
+
+BeginCmp
+TimeStamp = /557892A9;
+Reference = SD1;
+ValeurCmp = microSD;
+IdModule  = connect:SIL-7;
+EndCmp
+
+BeginCmp
+TimeStamp = /55789B4B;
+Reference = SP1;
+ValeurCmp = BUZZER;
+IdModule  = connect:SIL-2;
+EndCmp
+
+BeginCmp
+TimeStamp = /557CB927;
+Reference = SUP1;
+ValeurCmp = 3.3/GND/5V;
+IdModule  = connect:SIL-4;
+EndCmp
+
+EndListe
