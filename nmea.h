@@ -89,30 +89,67 @@ inline uint8_t NMEA_AppendCheckCRNL(char *NMEA, uint8_t Len) { return NMEA_Appen
        if(Field==(Parms-1)) return Len-4-Comma[Field];
        return Parm[Field+1]-Parm[Field]-1; }
 */
-   uint8_t isGPS(void) const                   // GPS sentence ?
-     {     if(Data[1]!='G') return 0;
+   uint8_t isGP(void) const                    // GPS sentence ?
+     { if(Data[1]!='G') return 0;
        return Data[2]=='P'; }
 
+   uint8_t isGN(void) const
+     { if(Data[1]!='G') return 0;
+       return Data[2]=='N'; }
+
+   uint8_t isGx(void) const                    // GPS or GLONASS sentence ?
+     { return Data[1]=='G'; }
+
    uint8_t isGPRMC(void) const                  // GPS recomended minimum data
-     { if(!isGPS()) return 0;
+     { if(!isGP()) return 0;
+       if(Data[3]!='R') return 0;
+       if(Data[4]!='M') return 0;
+       return Data[5]=='C'; }
+
+   uint8_t isGNRMC(void) const                  // GPS recomended minimum data
+     { if(!isGN()) return 0;
+       if(Data[3]!='R') return 0;
+       if(Data[4]!='M') return 0;
+       return Data[5]=='C'; }
+
+   uint8_t isGxRMC(void) const                  // GPS recomended minimum data
+     { if(!isGx()) return 0;
        if(Data[3]!='R') return 0;
        if(Data[4]!='M') return 0;
        return Data[5]=='C'; }
 
    uint8_t isGPGGA(void) const                  // GPS 3-D fix data
-     { if(!isGPS()) return 0;
+     { if(!isGP()) return 0;
+       if(Data[3]!='G') return 0;
+       if(Data[4]!='G') return 0;
+       return Data[5]=='A'; }
+
+   uint8_t isGxGGA(void) const                  // 
+     { if(!isGx()) return 0;
        if(Data[3]!='G') return 0;
        if(Data[4]!='G') return 0;
        return Data[5]=='A'; }
 
    uint8_t isGPGSA(void) const                   // GPS satellite data
-     { if(!isGPS()) return 0;
+     { if(!isGP()) return 0;
+       if(Data[3]!='G') return 0;
+       if(Data[4]!='S') return 0;
+       return Data[5]=='A'; }
+
+   uint8_t isGNGSA(void) const                   // 
+     { if(!isGN()) return 0;
+       if(Data[3]!='G') return 0;
+       if(Data[4]!='S') return 0;
+       return Data[5]=='A'; }
+
+   uint8_t isGxGSA(void) const                   // 
+     { if(!isGx()) return 0;
        if(Data[3]!='G') return 0;
        if(Data[4]!='S') return 0;
        return Data[5]=='A'; }
 
    uint8_t isGPTXT(void) const                   // GPS satellite data
-     { if(!isGPS()) return 0;
+     { if(!isGP()) return 0;
        if(Data[3]!='T') return 0;
        if(Data[4]!='X') return 0;
        return Data[5]=='T'; }

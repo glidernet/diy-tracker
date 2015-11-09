@@ -708,7 +708,9 @@ class OgnPosition
    int8_t ReadNMEA(NMEA_RxMsg &RxMsg)
    {      if(RxMsg.isGPGGA()) return ReadGGA(RxMsg);
      else if(RxMsg.isGPRMC()) return ReadRMC(RxMsg);
+     else if(RxMsg.isGNRMC()) return ReadRMC(RxMsg);
      else if(RxMsg.isGPGSA()) return ReadGSA(RxMsg);
+     else if(RxMsg.isGNGSA()) return ReadGSA(RxMsg);
      else return 0; }
 
    int8_t ReadNMEA(const char *NMEA)

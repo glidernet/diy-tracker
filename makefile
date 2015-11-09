@@ -21,7 +21,7 @@ TCHAIN = arm-none-eabi
 # WITH_OPTS = beeper vario bmp180 knob  relay config # for regular tracker with a knob and BMP180 but no SD card
 # WITH_OPTS = beeper vario bmp180 sdlog relay config # for the test system (no knob but the SD card)
 # WITH_OPTS = beeper vario bmp180 relay config
-WITH_OPTS = beeper vario bmp180 config relay
+WITH_OPTS = beeper relay config
 
 MCU = STM32F103C8  # STM32F103C8 for no-name STM32F1 board, STM32F103CB for Maple mini
 
