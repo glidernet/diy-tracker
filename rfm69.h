@@ -124,7 +124,12 @@ class RFM69
    void (*RESET_On)(void);            // activate RF chip reset
    void (*RESET_Off)(void);           // desactive RF chip reset
 
-  public:
+   uint32_t BaseFrequency;            // [32MHz/2^19] base frequency = channel #0
+    int32_t FrequencyCorrection;      // [32MHz/2^19] frequency correction (due to Xtal offset)
+   uint32_t ChannelSpacing;           // [32MHz/2^19] spacing between channels
+    int16_t Channel;                  // [   integer] channel being used rigth now
+
+  private:
    uint8_t WriteByte(uint8_t Byte, uint8_t Addr=0) const   // write Byte
    { Select();
      TransferByte(Addr | 0x80);
@@ -162,6 +167,7 @@ class RFM69
      Deselect();
      return Word; }
 
+  public:
    uint32_t WriteFreq(uint32_t Freq) const             // [32MHz/2^19] Set center frequency
    { const uint8_t Addr = RFM69_FRFMSB;
      Select();
@@ -171,6 +177,9 @@ class RFM69
      Old = (Old<<8) | TransferByte(Freq);
      Deselect();
      return Old; }                                               // return the previously set frequency
+
+   void setChannel(int16_t newChannel)
+   { Channel=newChannel; WriteFreq(BaseFrequency+ChannelSpacing*Channel+FrequencyCorrection); }
 
    void WritePacket(const uint8_t *Data, uint8_t Len=26) const   // write the packet data (26 bytes)
    { const uint8_t Addr=RFM69_FIFO;                              // write to FIFO
@@ -244,15 +253,15 @@ class RFM69
    { if(isHW) WriteTxPower_HW(TxPower);
          else WriteTxPower_W (TxPower);  }
 
-   void WriteTxPowerMin(void) const { WriteTxPower_W(-18); } // minimal Tx power and setup for Rx
+   void WriteTxPowerMin(void) const { WriteTxPower_W(-18); } // set minimal Tx power and setup for reception
 
-   int Configure(uint32_t Freq, const uint8_t *Sync) const
+   int Configure(int16_t Channel, const uint8_t *Sync)
    { WriteMode(RFM69_OPMODE_STDBY);          // mode = STDBY
      ClearIrqFlags();
      WriteByte(  0x02, RFM69_DATAMODUL);     // Packet mode, FSK, BT=0.5
      WriteWord(0x0140, RFM69_BITRATEMSB);    // bit rate = 100kbps
      WriteWord(0x0333, RFM69_FDEVMSB);       // FSK deviation = +/-50kHz
-     WriteFreq(Freq);                        // operating freq
+     setChannel(Channel);                    // operating channel
      WriteSYNC(8, 7, Sync);                  // SYNC pattern (setup for reception)
      WriteByte(  0x00, RFM69_PACKETCONFIG1); // Fixed size packet, no DC-free encoding, no CRC, no address filtering
      WriteByte(0x80+51, RFM69_FIFOTHRESH);   // TxStartCondition=FifoNotEmpty, FIFO threshold = 51 bytes

@@ -419,6 +419,7 @@ int main(void)
 // . separate task for RX processing (retransmission decision)
 // . good packets go to RX, bad packets go to FEC first
 // + packet retransmission and strategy
+// . limit or receive range to minimize false FEC decode
 //
 // + queue for sounds to be played on the buzzer
 // + separate the UART code
@@ -431,8 +432,8 @@ int main(void)
 // + simple log system onto SD
 // + regular log close and auto-resume when card inserted
 // + DDMMYY in the log file name
-// . proper buffering
-// . IGC log
+// + proper buffering
+// . IGC log (detect takeoff/landing ?)
 // + FIFO as th elog file buffer
 // + file error crashes the system - resolved after the bug when baro was writing into a null pointer
 //

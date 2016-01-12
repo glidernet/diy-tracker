@@ -75,16 +75,16 @@ void RFM69_GPIO_Configuration(void)
 
 // ==================================================================
 
-// OGN SYNC: 0x0AF3656C encoded in Manchester
+// OGN SYNC:   0x0AF3656C encoded in Manchester
 static const uint8_t OGN_SYNC[8] = { 0xAA, 0x66, 0x55, 0xA5, 0x96, 0x99, 0x96, 0x5A };
 
 // OGN frequencies: 868.2 and 868.4 MHz
-static const double OGN_LowFreq = 868.200e6; // [MHz] 868MHz band frequencies
-static const double OGN_UppFreq = 868.400e6; // [MHz]
-static const double    XtalFreq = 32e6;      // [MHz] RF chip crystal frequency
+static const double OGN_BaseFreq  = 868.200e6; // [MHz] 868.2MHz base frequency
+static const double OGN_ChanSpace =   0.200e6; // [MHz]   0.2MHz channel spacing
+static const double    XtalFreq = 32e6;        // [MHz] RF chip crystal frequency
 
-static const uint32_t LowFreq = floor(OGN_LowFreq/(XtalFreq/(1<<19))+0.5); // conversion from RF frequency
-static const uint32_t UppFreq = floor(OGN_UppFreq/(XtalFreq/(1<<19))+0.5); // to RF chip synthesizer setting
+static const uint32_t BaseFreq  = floor(OGN_BaseFreq /(XtalFreq/(1<<19))+0.5); // conversion from RF frequency
+static const uint32_t ChanSpace = floor(OGN_ChanSpace/(XtalFreq/(1<<19))+0.5); // to RF chip synthesizer setting
 
 static RFM69             TRX;    // radio transceiver
 
@@ -95,7 +95,6 @@ static OGN_PrioQueue<16> RelayQueue;  // received packets and candidates to be r
 static OGN_Packet        RelayPacket; // received packet to be re-transmitted
 static LDPC_Decoder      Decoder;     // error corrector for the OGN Gallager code
 
-static uint8_t TX_FreqChan=0;     // 0 = 868.2MHz, 1 = 868.4MHz
 static uint8_t TX_Credit  =0;     // counts transmitted packets vs. time to avoid using more than 1% of the time
 
 static uint8_t RX_Packets=0;      // [packets] counts received packets
@@ -110,7 +109,7 @@ static uint16_t           RX_Count64=0; // counts received packets for the last 
 
 static char Line[88];
 
-static uint8_t Receive(void)                                 // see if a packet has arrived
+static uint8_t ReceivePacket(void)                           // see if a packet has arrived
 { if(!TRX.DIO0_isOn()) return 0;                             // DIO0 line HIGH signals a new packet has arrived
 
 #ifdef WITH_BEEPER
@@ -186,7 +185,7 @@ static uint32_t Receive(uint32_t Ticks)                          // keep receivi
 { uint32_t Count=0; uint32_t Delta=0;
   TickType_t Start=xTaskGetTickCount();                          // remember when you started
   do
-  { Count+=Receive(); vTaskDelay(1);
+  { Count+=ReceivePacket(); vTaskDelay(1);
     Delta=xTaskGetTickCount()-Start;                             // time since you started
   } while(Delta<Ticks);                                          // keep going until time since started equals to the given time period
   return Count; }                                                // return number of received packets
@@ -252,7 +251,10 @@ static uint8_t StartRFchip(void)
   vTaskDelay(10);
   TRX.RESET_Off();
   vTaskDelay(10);
-  TRX.Configure(LowFreq, OGN_SYNC);
+  TRX.BaseFrequency       = BaseFreq;
+  TRX.ChannelSpacing      = ChanSpace;
+  TRX.FrequencyCorrection = Parameters.RFchipFreqCorr;
+  TRX.Configure(0, OGN_SYNC);
   TRX.WriteMode(RFM69_OPMODE_STDBY);
   return TRX.ReadVersion(); }
 
@@ -261,7 +263,7 @@ static uint8_t StartRFchip(void)
 #endif
 void vTaskRF(void* pvParameters)
 {
-                                          // set hardware interface
+                                          // set interface for the RF chip
   TRX.Select       = SPI1_Select;         //
   TRX.Deselect     = SPI1_Deselect;
   TRX.TransferByte = SPI1_TransferByte;
@@ -299,7 +301,7 @@ void vTaskRF(void* pvParameters)
   RX_Count64 = 0;
   RX_CountDelay.Clear();
 
-  TX_FreqChan=0; TRX.WriteFreq(LowFreq+Parameters.RFchipFreqCorr);
+  TRX.setChannel(0);
   TRX.WriteSYNC(7, 7, OGN_SYNC); TRX.WriteMode(RFM69_OPMODE_RX);
   for( ; ; )
   {
@@ -327,18 +329,10 @@ void vTaskRF(void* pvParameters)
     } else                                                                     // if GPS lock is not there
     { // if( (CurrPosPacket_Sec == GPS_Sec) && () )
     }                                                                          // we should invalidate position after some time
-/*
-    TRX.WriteMode(RFM69_OPMODE_STDBY);                                         // switch to standy
-    vTaskDelay(1);
 
-    TX_FreqChan=0; TRX.WriteFreq(LowFreq+Parameters.RFchipFreqCorr);           // switch to upper frequency
-
-    TRX.WriteMode(RFM69_OPMODE_RX);                                            // switch to receive mode
-    vTaskDelay(1);
-*/
     uint32_t RxRssiSum=0; uint16_t RxRssiCount=0;                              // measure the average RSSI for lower frequency
     do
-    { Receive();                                                               // keep checking for received packets
+    { ReceivePacket();                                                         // keep checking for received packets
       TRX.TriggerRSSI();
       vTaskDelay(1);
       uint8_t RxRSSI=TRX.ReadRSSI();                                           // measure the channel noise level
@@ -353,9 +347,9 @@ void vTaskRF(void* pvParameters)
     if(RX_Idle>=60)                                                            // if no reception within one minute
     { StartRFchip();                                                           // reset and rewrite the RF chip config
       RX_Idle=0; }
-                                                                               // here we can read the chip temperature
-    TX_FreqChan=1; TRX.WriteFreq(UppFreq+Parameters.RFchipFreqCorr);           // switch to upper frequency
+    TRX.setChannel(1);                                                         // switch to upper frequency
 
+                                                                               // here we can read the chip temperature
     TRX.TriggerTemp();                                                         // trigger RF chip temperature readout
     vTaskDelay(1); // while(TRX.RunningTemp()) taskYIELD();                    // wait for conversion to be ready
     int8_t ChipTemp= 165-TRX.ReadTemp();                                       // read RF chip temperature
@@ -365,7 +359,7 @@ void vTaskRF(void* pvParameters)
 
     RxRssiSum=0; RxRssiCount=0;                                                // measure the average RSSI for the upper frequency
     do
-    { Receive();                                                               // check for packets being received ?
+    { ReceivePacket();                                                         // check for packets being received ?
       TRX.TriggerRSSI();                                                       // start RSSI measurement
       vTaskDelay(1);
       uint8_t RxRSSI=TRX.ReadRSSI();                                           // read RSSI
@@ -431,9 +425,9 @@ void vTaskRF(void* pvParameters)
                              else TimeSlot(400, CurrPosPacket, RX_RssiUpp);    // otherwise send current position packet
     }
 
-    TX_FreqChan=0; TRX.WriteFreq(LowFreq+Parameters.RFchipFreqCorr);           // switch to lower frequency
+    TRX.setChannel(0);                                                         // switch to lower frequency
 
-    GetRelayPacket();
+    GetRelayPacket();                                                          // get readt the packet to be relayed (if any)
 
     TX_Credit++; if(!TX_Credit) TX_Credit--;                                   // new half slot => increment transmission credit
 

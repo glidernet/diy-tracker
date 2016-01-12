@@ -138,21 +138,23 @@ static void ProcessInput(void)
 // ================================================================================================
 
 #ifdef WITH_SDLOG
+static FATFS       FatFs;                                         // FatFS object for the file system (FAT)
+       SemaphoreHandle_t FatFs_Mutex;                             // Mutex for more than one file at a time access
+
 static   uint16_t  LogDate     =              0;                  // [~days] date = FatTime>>16
 static       char  LogName[14] = "TR000000.LOG";                  // log file name
 static FRESULT     LogErr;                                        // most recent error/state of the logging system
-static FATFS       FatFs;                                         // FatFS object for the file system (FAT)
 static FIL         LogFile;                                       // FatFS object for the log file
 static TickType_t  LogOpenTime;                                   // [msec] when was the log file (re)open
 static const  TickType_t  LogReopen = 20000;                      // [msec] when to close and re-open the log file
 
-static VolatileFIFO<char, 512> Log_FIFO;                         // buffer for SD-log
-       SemaphoreHandle_t Log_Mutex;
+static VolatileFIFO<char, 512> Log_FIFO;                          // buffer for SD-log
+       SemaphoreHandle_t Log_Mutex;                               // Mutex for the FIFO to prevent mixing between threads
 
-void Log_Write(char Byte)                                        // write a byte into the log file buffer (FIFO)
-{ if(Log_FIFO.Write(Byte)>0) return;                             // if byte written into FIFO return
-  while(Log_FIFO.Write(Byte)<=0) vTaskDelay(1); }                // wait while the FIFO is full - we have to use vTaskDelay not TaskYIELD
-                                                                 // TaskYIELD would not give time to lower priority task like log-writer
+void Log_Write(char Byte)                                         // write a byte into the log file buffer (FIFO)
+{ if(Log_FIFO.Write(Byte)>0) return;                              // if byte written into FIFO return
+  while(Log_FIFO.Write(Byte)<=0) vTaskDelay(1); }                 // wait while the FIFO is full - we have to use vTaskDelay not TaskYIELD
+                                                                  // TaskYIELD would not give time to lower priority task like log-writer
 static void Log_Open(void)
 { LogDate=get_fattime()>>16;                                      // get the FAT-time date part
   int32_t Day   =  LogDate    &0x1F;                              // get day, month, year
@@ -237,9 +239,10 @@ extern "C"
 void vTaskCTRL(void* pvParameters)
 {
 #ifdef WITH_SDLOG
+  FatFs_Mutex = xSemaphoreCreateMutex();
+
   Log_Mutex = xSemaphoreCreateMutex();
   Log_FIFO.Clear();
-
   LogErr=f_mount(&FatFs, "", 0);
   if(!LogErr) Log_Open();
 #endif
