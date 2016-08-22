@@ -958,8 +958,8 @@ class OgnPosition
 #endif
 
    uint16_t DaysSince00(void)
-   { uint16_t Days = 365*Year + (Year>>2);
-     if(Year>0) Days++;
+   { uint16_t Days = 365*Year;
+     if(Year>0) Days += ((Year-1)>>2)+1;
      return Days; }
 
    template <class Type>
