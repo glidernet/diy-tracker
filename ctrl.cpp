@@ -17,6 +17,8 @@
 #include "main.h"
 #include "gps.h"
 
+#include "systick.h"
+
 #ifdef WITH_SDCARD
   #include "fifo.h"
   #include "diskio.h"
@@ -68,6 +70,26 @@ static void ProcessCtrlC(void)                                  // print system 
     // xSemaphoreGive(UART1_Mutex);                                  // give back UART1 to other tasks
   }
   vPortFree( pxTaskStatusArray );
+/*
+#ifdef WITH_PPS_IRQ
+  { // only to check SysTick
+  Format_UnsDec(UART1_Write, (uint32_t)(xTaskGetTickCount()-PPS_IRQ_TickCount));
+  UART1_Write(':');
+  Format_UnsDec(UART1_Write, PPS_IRQ_TickTime);
+  UART1_Write(' ');
+  Format_SignDec(UART1_Write, PPS_IRQ_TickTimeDiff);
+  UART1_Write('/');
+  Format_UnsDec(UART1_Write, getSysTick_Reload());
+  UART1_Write(' ');
+  Format_UnsDec(UART1_Write, PPS_IRQ_Period);
+  UART1_Write('/');
+  // Format_SignDec(UART1_Write, PPS_IRQ_AverPeriod.getOutput());
+  // UART1_Write(' ');
+  Format_SignDec(UART1_Write, (PPS_IRQ_AverPeriod.Out*100+128)>>8, 3, 2);
+  UART1_Write('\r'); UART1_Write('\n');
+  }
+#endif
+*/
 Exit:
   xSemaphoreGive(UART1_Mutex);                                       // give back UART1 to other tasks
 }
@@ -79,7 +101,8 @@ static NMEA_RxMsg NMEA;
 #ifdef WITH_CONFIG
 static void ReadParameters(void)  // read parameters requested by the user in the NMEA sent.
 { if((!NMEA.hasCheck()) || NMEA.isChecked() )
-  { const char *Parm; int8_t Val;
+  { PrintParameters();
+    const char *Parm; int8_t Val;
     Parm = (const char *)NMEA.ParmPtr(0);                                  // [0..15] aircraft-type: 1=glider, 2=towa plane, 3=helicopter, ...
     if(Parm)
     { Val=Read_Hex1(Parm[0]);
@@ -104,8 +127,8 @@ static void ReadParameters(void)  // read parameters requested by the user in th
     Parm = (const char *)NMEA.ParmPtr(5);                                  // [Hz] Tx/Rx frequency correction
     int32_t FreqCorr;
     Len=Read_SignDec(FreqCorr, Parm);
-    if( (Len>0) && (FreqCorr>=(-100000)) && (FreqCorr<=100000) ) Parameters.RFchipFreqCorr = (FreqCorr<<8)/15625;
-
+    if( (Len>0) && (FreqCorr>=(-100000)) && (FreqCorr<=100000) ) Parameters.RFchipFreqCorr = FreqCorr/10;
+    PrintParameters();
     taskDISABLE_INTERRUPTS();                                              // disable all interrupts: Flash can not be read while being erased
     IWDG_ReloadCounter();                                                  // kick the watch-dog
     Parameters.WriteToFlash();                                             // erase and write the parameters into the last page of Flash
@@ -117,7 +140,7 @@ static void ReadParameters(void)  // read parameters requested by the user in th
 #endif
 
 static void ProcessNMEA(void)     // process a valid NMEA that got to the console
-{ 
+{
 #ifdef WITH_CONFIG
   if(NMEA.isPOGNS()) ReadParameters();
 #endif

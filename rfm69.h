@@ -124,10 +124,24 @@ class RFM69
    void (*RESET_On)(void);            // activate RF chip reset
    void (*RESET_Off)(void);           // desactive RF chip reset
 
-   uint32_t BaseFrequency;            // [32MHz/2^19] base frequency = channel #0
-    int32_t FrequencyCorrection;      // [32MHz/2^19] frequency correction (due to Xtal offset)
-   uint32_t ChannelSpacing;           // [32MHz/2^19] spacing between channels
-    int16_t Channel;                  // [   integer] channel being used rigth now
+                                      // the following are in units of the synthesizer with 8 extra bits of precision
+   uint32_t BaseFrequency;            // [32MHz/2^19/2^8] base frequency = channel #0
+    int32_t FrequencyCorrection;      // [32MHz/2^19/2^8] frequency correction (due to Xtal offset)
+   uint32_t ChannelSpacing;           // [32MHz/2^19/2^8] spacing between channels
+    int16_t Channel;                  // [       integer] channel being used
+
+  // private:
+   static uint32_t calcSynthFrequency(uint32_t Frequency) { return (((uint64_t)Frequency<<16)+7812)/15625; }
+
+  public:
+   void setBaseFrequency(uint32_t Frequency=868200000) { BaseFrequency=calcSynthFrequency(Frequency); }
+   void setChannelSpacing(uint32_t  Spacing=   200000) { ChannelSpacing=calcSynthFrequency(Spacing); }
+   void setFrequencyCorrection(int32_t Correction=0)
+   { if(Correction<0) FrequencyCorrection = -calcSynthFrequency(-Correction);
+                else  FrequencyCorrection =  calcSynthFrequency( Correction); }
+   void setChannel(int16_t newChannel)
+   { Channel=newChannel; WriteFreq((BaseFrequency+ChannelSpacing*Channel+FrequencyCorrection+128)>>8); }
+   uint8_t getChannel(void) const { return Channel; }
 
   private:
    uint8_t WriteByte(uint8_t Byte, uint8_t Addr=0) const   // write Byte
@@ -168,18 +182,15 @@ class RFM69
      return Word; }
 
   public:
-   uint32_t WriteFreq(uint32_t Freq) const             // [32MHz/2^19] Set center frequency
+   uint32_t WriteFreq(uint32_t Freq) const                       // [32MHz/2^19] Set center frequency in units of RFM69 synth.
    { const uint8_t Addr = RFM69_FRFMSB;
      Select();
      TransferByte(Addr | 0x80);
      uint32_t Old  =  TransferByte(Freq>>16);
      Old = (Old<<8) | TransferByte(Freq>>8);
-     Old = (Old<<8) | TransferByte(Freq);
+     Old = (Old<<8) | TransferByte(Freq);                        // actual change in the frequency happens only when the LSB is written
      Deselect();
      return Old; }                                               // return the previously set frequency
-
-   void setChannel(int16_t newChannel)
-   { Channel=newChannel; WriteFreq(BaseFrequency+ChannelSpacing*Channel+FrequencyCorrection); }
 
    void WritePacket(const uint8_t *Data, uint8_t Len=26) const   // write the packet data (26 bytes)
    { const uint8_t Addr=RFM69_FIFO;                              // write to FIFO
@@ -215,7 +226,8 @@ class RFM69
      if(WriteSize>8) WriteSize=8;
      WriteBytes(SyncData+(8-WriteSize), WriteSize, RFM69_SYNCVALUE1);        // write the SYNC, skip some initial bytes
      WriteByte(  0x80 | ((WriteSize-1)<<3) | SyncTol, RFM69_SYNCCONFIG);     // write SYNC length [bytes]
-     WriteWord( 9-WriteSize, RFM69_PREAMBLEMSB); }                           // write preamble length [bytes]
+     WriteWord( 8-WriteSize, RFM69_PREAMBLEMSB); }                           // write preamble length [bytes] (page 71)
+//              ^ 8 or 9 ?
 
    void    WriteMode(uint8_t Mode=RFM69_OPMODE_STDBY) const { WriteByte(Mode, RFM69_OPMODE); } // SLEEP/STDBY/FSYNTH/TX/RX
    uint8_t ReadMode (void) const { return ReadByte(RFM69_OPMODE); }
@@ -250,7 +262,8 @@ class RFM69
    }
 
    void WriteTxPower(int8_t TxPower, uint8_t isHW) const
-   { if(isHW) WriteTxPower_HW(TxPower);
+   { WriteByte(  0x0C, RFM69_PARAMP); // Tx ramp up/down time = 20us (page 66)
+     if(isHW) WriteTxPower_HW(TxPower);
          else WriteTxPower_W (TxPower);  }
 
    void WriteTxPowerMin(void) const { WriteTxPower_W(-18); } // set minimal Tx power and setup for reception
@@ -269,11 +282,10 @@ class RFM69
      WriteByte(  0x02, RFM69_PACKETCONFIG2); // disable encryption (it is permanent between resets !), AutoRxRestartOn=1
      WriteByte(  0x00, RFM69_AUTOMODES);
      WriteTxPowerMin();                      // TxPower (setup for reception)
-     WriteByte(  0x08, RFM69_LNA);           // LNA input 50 or 200ohm ?
+     WriteByte(  0x88, RFM69_LNA);           // bit #7 = LNA input impedance: 0=50ohm or 1=200ohm ?
      WriteByte( 2*114, RFM69_RSSITHRESH);    // RSSI threshold = -114dBm
      WriteByte(  0x4A, RFM69_RXBW);          // +/-100kHz Rx bandwidth => p.27+67
      WriteByte(  0x89, RFM69_AFCBW);         // +/-200kHz Rx bandwidth while AFC
-     WriteByte(  0xE4, RFM69_RSSITHRESH);
      WriteWord(0x4047, RFM69_DIOMAPPING1);   // DIO signals: DIO0=01, DIO4=01, ClkOut=OFF
                                              // RX: DIO0 = PayloadReady, DIO4 = Rssi
                                              // TX: DIO0 = TxReady,      DIO4 = TxReady

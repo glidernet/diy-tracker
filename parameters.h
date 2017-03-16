@@ -12,7 +12,7 @@
 class FlashParameters
 { public:
    uint32_t  AcftID;         // identification: Private:AcftType:AddrType:Address - must be different for every tracker
-    int16_t  RFchipFreqCorr; // [61Hz] frequency correction for crystal frequency offset
+    int16_t  RFchipFreqCorr; // [10Hz] frequency correction for crystal frequency offset
     int8_t   RFchipTxPower;  // [dBm] highest bit set => HW module (up to +20dBm Tx power)
     int8_t   RFchipTempCorr; // [degC] correction to the temperature measured in the RF chip
    uint32_t  CONbaud;        // [bps] Console baud rate
@@ -47,7 +47,7 @@ class FlashParameters
   void setDefault(void)
   { AcftID = UniqueID[0] ^ UniqueID[1] ^ UniqueID[2]; 
     AcftID = 0x07000000 | (AcftID&0x00FFFFFF);
-    RFchipFreqCorr =         0; // [61Hz]
+    RFchipFreqCorr =         0; // [10Hz]
 #ifdef WITH_RFM69W
     RFchipTxPower  =        13; // [dBm] for RFM69W
 #else
@@ -97,13 +97,18 @@ class FlashParameters
     Line[Len++]=HexDigit(getAcftType()); Line[Len++]=':';
     Line[Len++]=HexDigit(getAddrType()); Line[Len++]=':';
     Len+=Format_Hex(Line+Len, getAddress(), 6);
+#ifdef WITH_RFM69
     Len+=Format_String(Line+Len, " RFM69");
     if(isTxTypeHW()) Line[Len++]='H';
     Line[Len++]='W';
+#endif
+#ifdef WITH_RFM95
+    Len+=Format_String(Line+Len, " RFM95");
+#endif
     Line[Len++]='/';
     Len+=Format_SignDec(Line+Len, (int16_t)getTxPower());
     Len+=Format_String(Line+Len, "dBm");
-    Line[Len++]=' '; Len+=Format_SignDec(Line+Len, ((int32_t)RFchipFreqCorr*15625+128)>>8, 1); Len+=Format_String(Line+Len, "Hz");
+    Line[Len++]=' '; Len+=Format_SignDec(Line+Len, 10*(int32_t)RFchipFreqCorr, 1); Len+=Format_String(Line+Len, "Hz");
     Len+=Format_String(Line+Len, " GPS:");
     Len+=Format_UnsDec(Line+Len, GPSbaud);
     Len+=Format_String(Line+Len, "bps\n");

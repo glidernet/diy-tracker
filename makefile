@@ -2,6 +2,8 @@
 # unpacked to a directory: TPATH
 
 TPATH = ../gcc-arm-none-eabi-4.9/bin
+# TPATH = ../gcc-arm-none-eabi-5.4/bin
+# TPATH = /usr/bin
 TCHAIN = arm-none-eabi
 
 #-------------------------------------------------------------------------------
@@ -15,13 +17,18 @@ TCHAIN = arm-none-eabi
 # sdlog ... logging to sdcard (selects sdcard too)
 # knob ... user knob to set volume and options
 # config ... setting the aircraft-type, address-type, address, etc. through the serial port
+# rfm69
 # rfm69w ... for the lower tx power RF chip
-# relay ... with packet-relay code
+# rfm95
+# relay ... packet-relay code (conditional code not implemented yet)
+# pps_irq
 
-# WITH_OPTS = beeper vario bmp180 knob  relay config # for regular tracker with a knob and BMP180 but no SD card
-# WITH_OPTS = beeper vario bmp180 sdlog relay config # for the test system (no knob but the SD card)
-# WITH_OPTS = beeper vario bmp180 relay config
-WITH_OPTS = beeper relay config
+# WITH_OPTS = rfm69 beeper vario bmp180 knob  relay config pps_irq # for regular tracker with a knob and BMP180 but no SD card
+# WITH_OPTS = rfm69 beeper vario bmp180 sdlog relay config # for the test system (no knob but the SD card)
+WITH_OPTS = rfm69 beeper vario bmp180 relay config pps_irq
+# WITH_OPTS = rfm69 beeper relay config
+
+# WITH_OPTS = rfm95 beeper vario bmp180 relay config
 
 MCU = STM32F103C8  # STM32F103C8 for no-name STM32F1 board, STM32F103CB for Maple mini
 
@@ -35,6 +42,7 @@ C_SRC += ctrl.cpp
 C_SRC += sens.cpp
 C_SRC += knob.cpp
 
+C_SRC += uart.cpp
 C_SRC += uart1.cpp
 C_SRC += uart2.cpp
 C_SRC += spi1.cpp
@@ -43,6 +51,7 @@ C_SRC += spi2.cpp
 C_SRC += format.cpp
 C_SRC += ldpc.cpp
 C_SRC += bitcount.cpp
+C_SRC += intmath.cpp
 
 C_SRC += adc.cpp
 C_SRC += nmea.cpp
@@ -72,7 +81,6 @@ ifneq ($(findstring bmp180,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_BMP180
   WITH_OPTS += i2c1
   C_SRC += atmosphere.cpp
-  C_SRC += intmath.cpp
 endif
 
 ifneq ($(findstring i2c1,$(WITH_OPTS)),)
@@ -110,12 +118,24 @@ ifneq ($(findstring config,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_CONFIG
 endif
 
+ifneq ($(findstring rfm69,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_RFM69
+endif
+
 ifneq ($(findstring rfm69w,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_RFM69W
 endif
 
+ifneq ($(findstring rfm95,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_RFM95
+endif
+
 ifneq ($(findstring relay,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_RELAY
+endif
+
+ifneq ($(findstring pps_irq,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_PPS_IRQ
 endif
 
 #-------------------------------------------------------------------------------
@@ -216,7 +236,7 @@ clean:
 	-rm -fR $(OUTDIR)
 
 arch:	clean
-	tar cvzf diy-tracker.tgz makefile *.h *.c* *.ld *.py cmsis cmsis_boot stm_lib FreeRTOS_8.2.0 # free_rtos # FRT_Library
+	tar cvzf diy-tracker.tgz makefile *.h *.cc *.cpp *.ld *.py cmsis cmsis_boot stm_lib FreeRTOS_8.2.0 # free_rtos # FRT_Library
 
 #-------------------------------------------------------------------------------
 

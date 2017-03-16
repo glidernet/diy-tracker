@@ -57,6 +57,29 @@ int32_t IntSine(uint32_t Angle)
   // printf(" [%04X %+11.8f %+11.8f] ",  -Frac2, (double)Deriv2/(uint32_t)0x80000000, (double)Corr/(uint32_t)0x80000000);
   return Value; }
 
+// lett precise sine for 16-bit angles
+// source: http://www.coranac.com/2009/07/sines/
+/// A sine approximation via a fourth-order cosine approx.
+/// @param x   angle (with 2^16 units/circle)
+/// @return     Sine value (Q12)
+int16_t Isin(int16_t Angle)     // input: full angle = 16-bit range
+{
+    int32_t x=Angle;
+    int32_t c, y;
+    static const int qN= 14, qA= 12, B=19900, C=3516;
+
+    c= x<<(30-qN);              // Semi-circle info into carry.
+    x -= 1<<qN;                 // sine -> cosine calc
+
+    x= x<<(31-qN);              // Mask with PI
+    x= x>>(31-qN);              // Note: SIGNED shift! (to qN)
+    x= (x*x)>>(2*qN-14);        // x=x^2 To Q14
+
+    y= B - ((x*C)>>14);         // B - x^2*C
+    y= (1<<qA)-((x*y)>>16);     // A - x^2*(B-x^2*C)
+
+    return c>=0 ? y : -y; }     // result: -4096..+4096 (max. error = +/-12)
+
 
 /*
 int16_t IntAtan2(int16_t Y, int16_t X)
@@ -104,8 +127,7 @@ int16_t IntAtan2(int16_t Y, int16_t X)
   Angle += ((5*D)>>3) - (DDD>>3);
   return Angle; } // good to about 1/6 degree
 
-
-
+/*
 // integer square root
 uint32_t IntSqrt(uint32_t Inp)
 { uint32_t Out  = 0;
@@ -120,3 +142,16 @@ uint32_t IntSqrt(uint32_t Inp)
 
   return Out; }
 
+uint64_t IntSqrt(uint64_t Inp)
+{ uint64_t Out  = 0;
+  uint64_t Mask = 0x4000000000000000;
+
+  while(Mask>Inp) Mask>>=2;
+  while(Mask)
+  { if(Inp >= (Out+Mask))
+    { Inp -= Out+Mask; Out += Mask<<1; }
+    Out>>=1; Mask>>=2; }
+  if(Inp>Out) Out++;
+
+  return Out; }
+*/

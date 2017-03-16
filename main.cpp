@@ -65,9 +65,33 @@ FlashParameters Parameters; // parameters to be stored in Flash, on the last pag
 
 // ======================================================================================
 
+// RF board pin-out: RFM69HW
+
+// RESET  1     16  NC
+// DIO0   2     15  NSS
+// DIO1   3     14  MOSI
+// DIO2   4     13  MISO
+// DIO3   5     12  SCK
+// DIO4   6     11  GND
+// DIO5   7     10  ANT
+// 3.3V   8      9  GND
+
+
+// RF board pin-out: RFM95
+
+//   GND  1     16  DIO2
+//  MISO  2     15  DIO1
+//  MOSI  3     14  DIO0
+//   SCK  4     13  3.3V
+//   NSS  5     12  DIO4
+// RESET  6     11  DIO3
+//  DIO5  7     10  ANT
+//   GND  8      9  GND
+
+
 // ======================================================================================
 
-// Board pin-out: "no name" STM32F103C8T6, CPU chip facing up
+// CPU board pin-out: "no name" STM32F103C8T6, CPU chip facing up
 
 //                  Vbat     3.3V           -> LED, I2C pull-up
 // LED <-           PC13     GND            <- Li-Ion battery
@@ -143,7 +167,7 @@ void RCC_Configuration(void)
 
   if(Timeout)                                            // if HSE came up: use it
     RCC_PLLConfig (RCC_PLLSource_HSE_Div2, RCC_PLLMul_15); // PLLCLK = 4MHz * 15 = 60 MHz
-  else                                                   // if HSE did not come up: us internal oscilator
+  else                                                   // if HSE did not come up: use internal oscilator
     RCC_PLLConfig (RCC_PLLSource_HSI_Div2, RCC_PLLMul_15); // PLLCLK = 4MHz * 15 = 60 MHz
 
   RCC_PLLCmd (ENABLE);                                   // Enable PLL
@@ -338,7 +362,7 @@ void prvSetupHardware(void)
 #endif
 
   SPI1_Configuration();                    // SPI1 for the RF chip
-  RFM69_GPIO_Configuration();              // RFM69(H)W Reset/DIO0/...
+  RFM_GPIO_Configuration();                // RFM69(H)W Reset/DIO0/...
   ADC_Configuration();                     // to measure Vref and CPU temp.
 
   LED_Configuration();
@@ -376,7 +400,7 @@ int main(void)
   prvSetupHardware();
 
   // CTRL: UART1, Console, SD log
-  xTaskCreate(vTaskCTRL,  "CTRL",   128, 0, tskIDLE_PRIORITY  , 0);
+  xTaskCreate(vTaskCTRL,  "CTRL",   160, 0, tskIDLE_PRIORITY  , 0);
 
 #ifdef WITH_KNOB
   // KNOB: read the knob (potentiometer wired to PB0)
@@ -390,7 +414,7 @@ int main(void)
   xTaskCreate(vTaskRF,    "RF",     128, 0, tskIDLE_PRIORITY+2, 0);
 
   // SENS: BMP180 pressure, correlate with GPS
-  xTaskCreate(vTaskSENS,  "SENS",   100, 0, tskIDLE_PRIORITY+1, 0);
+  xTaskCreate(vTaskSENS,  "SENS",   128, 0, tskIDLE_PRIORITY+1, 0);
 
   vTaskStartScheduler();
 
@@ -434,7 +458,7 @@ int main(void)
 // + DDMMYY in the log file name
 // + proper buffering
 // . IGC log (detect takeoff/landing ?)
-// + FIFO as th elog file buffer
+// + FIFO as the log file buffer
 // + file error crashes the system - resolved after the bug when baro was writing into a null pointer
 //
 // . auto-detect RFM69W or RFM69HW - possible at all ?
@@ -452,6 +476,7 @@ int main(void)
 // + GPS: keep functioning when GPGSA is not there
 // . check for loss of GPS data and declare fix loss
 // + keep/count time (from GPS)
+// . precise time from GPS and local clock correction
 //
 // + connect BMP180 pressure sensor
 // . pressure sensor correction in Flash parameters ?
@@ -472,7 +497,7 @@ int main(void)
 // + all hardware configure to main() before tasks start ?
 //
 // + objective code for RF chip
-// . CC1101/CC1120/SPIRIT1 code
+// . CC1101/CC1120/SPIRIT1/RFM95 code
 // . properly handle transmitted position when GPS looses lock
 // . NMEA commands to make sounds on the speaker
 //
@@ -484,4 +509,7 @@ int main(void)
 // . thermal circling detection
 // . measure/transmit/receive QNH
 // . measure/transmit/receive wind
-
+//
+// . slow, long range mode
+//
+//

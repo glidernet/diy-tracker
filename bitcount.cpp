@@ -1,5 +1,6 @@
 #include "bitcount.h"
 
+#ifndef BITCOUNT_USE_BUILTIN
 #ifdef BITCOUNT_SAVE_FLASH
 const uint8_t ByteCount1s[ 16] = { 0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4 } ;
 #else
@@ -21,6 +22,7 @@ const uint8_t ByteCount1s[256] = {
  3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
  4, 5, 5, 6, 5, 6, 6, 7, 5, 6, 6, 7, 6, 7, 7, 8
 } ;
+#endif
 #endif
 
 int Count1s(const uint8_t *Byte, int Bytes)

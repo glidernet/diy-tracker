@@ -4,7 +4,7 @@
 #ifndef __INTMATH_H__
 #define __INTMATH_H__
 
-const uint32_t SineScale=0x80000000;
+const uint32_t IntSine_Scale=0x80000000;
 
 // get Sine from the SineTable
 // Angle is 0..255 which corresponds to <0..2*PI)
@@ -18,16 +18,40 @@ int32_t IntSine(uint16_t Angle);
 // max. result error is about 2.3e-7
 int32_t IntSine(uint32_t Angle);
 
+const int16_t Isine_Scale=0x4000;
+
+// less precise sine for 16-bit angles
+int16_t Isin(int16_t Angle);
+
 // atan2(Y, X)
 // max. result error is 1/6 degree
 int16_t IntAtan2(int16_t Y, int16_t X);
 
 // integer square root
-uint32_t IntSqrt(uint32_t Inp);
+// uint32_t IntSqrt(uint32_t Inp);
+// uint64_t IntSqrt(uint64_t Inp);
+
+template<class Type>
+ Type IntSqrt(Type Inp)
+{ Type Out  = 0;
+  Type Mask = 1; Mask<<=(sizeof(Type)*8-2);
+
+  while(Mask>Inp) Mask>>=2;
+  while(Mask)
+  { if(Inp >= (Out+Mask))
+    { Inp -= Out+Mask; Out += Mask<<1; }
+    Out>>=1; Mask>>=2; }
+  if(Inp>Out) Out++;
+
+  return Out; }
 
 // Distance = sqrt(dX*dX+dY*dY)
+
+inline uint32_t IntDistance(int32_t dX, int32_t dY) { return IntSqrt((uint64_t)((int64_t)dX*dX + (int64_t)dY*dY)); }
+inline uint16_t IntDistance(int16_t dX, int16_t dY) { return IntSqrt((uint32_t)((int32_t)dX*dX + (int32_t)dY*dY)); }
+
 template <class IntType>
- IntType IntDistance(IntType dX, IntType dY) // after: http://www.flipcode.com/archives/Fast_Approximate_Distance_Functions.shtml
+ IntType IntFastDistance(IntType dX, IntType dY) // after: http://www.flipcode.com/archives/Fast_Approximate_Distance_Functions.shtml
  { IntType min, max, approx;
 
    if(dX<0) dX = -dX;

@@ -1,3 +1,6 @@
+#ifndef __LOWPASS2_H__
+#define __LOWPASS2_H__
+
 // 2nd order IIR low pass (averaging) filter
 // When IntegScale2=IntegScale1-2 => no overshoot
 // When IntegScale2=IntegScale1-1 => overshoots by about 4%
@@ -16,9 +19,11 @@ class LowPass2
      Out1 = ( Inp -Out + (Out1<<IntegScale1) + (1<<(IntegScale1-1)) )>>IntegScale1;
      Out  = ( Out1-Out + (Out <<IntegScale2) + (1<<(IntegScale2-1)) )>>IntegScale2;
      return  Out ; }   // return fractional result
-
+   Int getOutput(void)
+   { return ( Out + (1<<(InpScale-1)) )>>InpScale; }
 } ;
 
 
 // make filter with gradually growing integration factors.
 
+#endif // __LOWPASS2_H__

@@ -123,7 +123,7 @@ static void ProcBaro()
 
         uint8_t Frac = Sec%10;
         if(Frac==0)
-        { OgnPosition *PosPtr = GPS_getPosition(Sec/10);                 // get GPS position record for this second
+        { GPS_Position *PosPtr = GPS_getPosition(Sec/10);                 // get GPS position record for this second
           if(PosPtr)                                                     // if found:
           { PosPtr->StdAltitude = StdAltitude;                           // store standard pressure altitude
             PosPtr->Temperature = Baro.Temperature;                      // and temperature in the GPS record
@@ -150,6 +150,18 @@ static void ProcBaro()
         xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
         Format_String(UART1_Write, Line, Len);                           // send NMEA sentence to the console (UART1)
         xSemaphoreGive(UART1_Mutex);
+
+        Len=0;                                                           // start preparing the PGRMZ NMEA sentence
+        Len+=Format_String(Line+Len, "$PGRMZ,");
+        Len+=Format_SignDec(Line+Len, StdAltitude, 2, 1);                // [m] standard altitude (calc. from pressure)
+        Line[Len++]=',';
+        Len+=Format_String(Line+Len, "m,");                              // normally f for feet, but metres and m works with XcSoar
+        Len+=Format_String(Line+Len, "3");                               // 1 no fix, 2 - 2D, 3 - 3D; assume 3D for now
+        Len+=NMEA_AppendCheckCRNL(Line, Len);
+        xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
+        Format_String(UART1_Write, Line, Len);                           // send NMEA sentence to the console (UART1)
+        xSemaphoreGive(UART1_Mutex);
+
 #ifdef WITH_SDLOG
         xSemaphoreTake(Log_Mutex, portMAX_DELAY);
         Format_String(Log_Write, Line, Len);                             // send NMEA sentence to the log file

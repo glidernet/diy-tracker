@@ -12,7 +12,6 @@
 
 #include "fifo.h"
 
-
 VolatileFIFO<uint8_t, 32> UART2_RxFIFO;
 VolatileFIFO<uint8_t, 32> UART2_TxFIFO;
 
@@ -25,46 +24,18 @@ VolatileFIFO<uint8_t, 32> UART2_TxFIFO;
 
 void UART2_Configuration (int BaudRate)
 {
-  NVIC_InitTypeDef NVIC_InitStructure;
-
-  NVIC_InitStructure.NVIC_IRQChannel = USART2_IRQn;                  // Enable the USART2 Interrupt
-  NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
-  NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
-  NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-  NVIC_Init(&NVIC_InitStructure);
-
-  GPIO_InitTypeDef  GPIO_InitStructure;
-  USART_InitTypeDef USART_InitStructure;
-  USART_ClockInitTypeDef USART_ClockInitStructure;
+  UART_ConfigNVIC(USART2_IRQn, 0, 0);                   // COnfigure and enable the USART2 Interrupt
 
   RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
   RCC_APB1PeriphClockCmd(RCC_APB1Periph_USART2,ENABLE);
 
-  GPIO_InitStructure.GPIO_Pin = GPIO_Pin_2;             // Configure USART2 Tx (PA.2) as alternate function push-pull
-  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-  GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
-  GPIO_Init(GPIOA, &GPIO_InitStructure);
- 
-  GPIO_InitStructure.GPIO_Pin = GPIO_Pin_3;               // Configure USART2 Rx (PA.3) as input floating
-  GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
-  GPIO_Init(GPIOA, &GPIO_InitStructure);
+  UART_ConfigGPIO(GPIOA, GPIO_Pin_3, GPIO_Pin_2);
+  UART_ConfigUSART(USART2, BaudRate);
 
-  USART_InitStructure.USART_BaudRate            = BaudRate; // UART2 at 9600bps (GPS)
-  USART_InitStructure.USART_WordLength          = USART_WordLength_8b;
-  USART_InitStructure.USART_StopBits            = USART_StopBits_1;
-  USART_InitStructure.USART_Parity              = USART_Parity_No;
-  USART_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
-  USART_InitStructure.USART_Mode                = USART_Mode_Rx | USART_Mode_Tx;
-  USART_ClockInitStructure.USART_Clock          = USART_Clock_Disable;
-  USART_ClockInitStructure.USART_CPOL           = USART_CPOL_Low;
-  USART_ClockInitStructure.USART_CPHA           = USART_CPHA_2Edge;
-  USART_ClockInitStructure.USART_LastBit        = USART_LastBit_Disable;
-  USART_Init     (USART2, &USART_InitStructure);
-  USART_ClockInit(USART2, &USART_ClockInitStructure);   // write parameters
   UART2_RxFIFO.Clear(); UART2_TxFIFO.Clear();
   USART_Cmd(USART2, ENABLE);                            // Enable USART2
   USART_ITConfig(USART2, USART_IT_RXNE, ENABLE);
-  NVIC_EnableIRQ(USART2_IRQn);
+  // NVIC_EnableIRQ(USART2_IRQn);
 }
 
 #ifdef __cplusplus

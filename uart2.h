@@ -5,7 +5,10 @@
 
 #include "stm32f10x_usart.h"
 
+#include "uart.h"
+
 void UART2_Configuration (int BaudRate=9600);
+inline void UART2_SetBaudrate(int BaudRate=9600) { UART_ConfigUSART(USART2, BaudRate); }
 
 int  inline UART2_TxDone(void)    { return USART_GetFlagStatus(USART2, USART_FLAG_TC)   != RESET; }
 int  inline UART2_TxEmpty(void)   { return USART_GetFlagStatus(USART2, USART_FLAG_TXE)  != RESET; }

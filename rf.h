@@ -1,6 +1,6 @@
 #include "spi1.h"
 
-void RFM69_GPIO_Configuration(); // prepare GPIO pins to talk to RFM69 module
+void RFM_GPIO_Configuration(); // prepare GPIO pins to talk to RFM69 module
 
 extern uint32_t RX_Random;       // random number derived from reception noise
 

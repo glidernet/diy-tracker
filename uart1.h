@@ -7,6 +7,8 @@
 
 #include "stm32f10x_usart.h"
 
+#include "uart.h"
+
 extern SemaphoreHandle_t UART1_Mutex;
 
 void UART1_Configuration (int BaudRate=115200);

@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <time.h>
 
 #include "lowpass2.h"
@@ -67,18 +68,18 @@ class LowPass2 // IIR bilinear ?
 */
 
 int main(int argc, char *argv[])
-{ LowPass2<int64_t,10,9,16> LowPass;
+{ LowPass2<uint32_t,8,6,8> LowPass;
 
-  LowPass.Set(0);
+  LowPass.Set(2*115);
 
   time_t Now; time(&Now); srand(Now);
 
-  for(int T=(-100); T<20000; T++)
-  { int32_t Inp = (T>=0) ? 1000000:0;
+  for(int T=(-1000); T<2000; T++)
+  { int32_t Inp = (T>=0) ? 2*115:0;
     //      Inp+= (rand()%33)-16;
-    int64_t Out = LowPass.Process(Inp)>>16;
-    printf("%+8d: %+10d %+15.3f %c %c\n",
-            T, Inp, (double)LowPass.Out/(1<<16), (Out>=500000)?'=':' ', (Out>=900000)?'^':' ' );
+    uint32_t Out = LowPass.Process(Inp);
+    printf("%+8d: %+10d %+15.3f (%10d,%10d)\n",
+            T, Inp, (double)LowPass.Out/(1<<8), LowPass.Out1, LowPass.Out);
   }
 
   return 0; }

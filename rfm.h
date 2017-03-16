@@ -1,0 +1,390 @@
+
+#if WITH_RFM69
+
+#include "sx1231.h"            // register addresses and values for SX1231 = RFM69
+
+#define REG_AFCCTRL    0x0B  // AFC method
+
+#define REG_TESTLNA     0x58  // Sensitivity boost ?
+#define REG_TESTPA1     0x5A  // only present on RFM69HW/SX1231H
+#define REG_TESTPA2     0x5C  // only present on RFM69HW/SX1231H
+#define REG_TESTDAGC    0x6F  // Fading margin improvement ?
+#define REG_TESTAFC     0x71
+
+#define RF_IRQ_AutoMode       0x0200
+
+#endif // of WITH_RFM69
+
+#ifdef WITH_RFM95
+
+#include "sx1276.h"
+
+#define RF_IRQ_PreambleDetect 0x0200
+
+#endif // of WITH_RFM95
+
+                                     // bits in IrqFlags1 and IrfFlags2
+#define RF_IRQ_ModeReady      0x8000 // mode change done (between some modes)
+#define RF_IRQ_RxReady        0x4000
+#define RF_IRQ_TxReady        0x2000 //
+#define RF_IRQ_PllLock        0x1000 //
+#define RF_IRQ_Rssi           0x0800
+#define RF_IRQ_Timeout        0x0400
+//
+#define RF_IRQ_SyncAddrMatch  0x0100
+
+#define RF_IRQ_FifoFull      0x0080 //
+#define RF_IRQ_FifoNotEmpty  0x0040 // at least one byte in the FIFO
+#define RF_IRQ_FifoLevel     0x0020 // more bytes than FifoThreshold
+#define RF_IRQ_FifoOverrun   0x0010 // write this bit to clear the FIFO
+#define RF_IRQ_PacketSent    0x0008 // packet transmission was completed
+#define RF_IRQ_PayloadReady  0x0004
+#define RF_IRQ_CrcOk         0x0002
+#define RF_IRQ_LowBat        0x0001
+
+#include "manchester.h"
+
+class RFM_TRX
+{ public:                             // hardware access functions
+
+#ifdef USE_BLOCK_SPI
+   void (*TransferBlock)(uint8_t *Data, uint8_t Len);
+   static const size_t MaxBlockLen = 64;
+   uint8_t Block_Buffer[MaxBlockLen];
+
+   uint8_t *Block_Read(uint8_t Len, uint8_t Addr)
+   { Block_Buffer[0]=Addr; memset(Block_Buffer+1, 0, Len);
+     (*TransferBlock) (Block_Buffer, Len+1);
+     return  Block_Buffer+1; }
+
+   uint8_t *Block_Write(const uint8_t *Data, uint8_t Len, uint8_t Addr)
+   { Block_Buffer[0] = Addr | 0x80; memcpy(Block_Buffer+1, Data, Len);
+     // printf("Block_Write( [0x%02X, .. ], %d, 0x%02X) .. [0x%02X, 0x%02X, ...]\n", Data[0], Len, Addr, Block_Buffer[0], Block_Buffer[1]);
+     (*TransferBlock) (Block_Buffer, Len+1);
+     return  Block_Buffer+1; }
+#else
+   void (*Select)(void);              // activate SPI select
+   void (*Deselect)(void);            // desactivate SPI select
+   uint8_t (*TransferByte)(uint8_t);  // exchange one byte through SPI
+#endif
+   bool (*DIO0_isOn)(void);           // read DIO0 = packet is ready
+   bool (*DIO4_isOn)(void);
+   void (*RESET_On)(void);            // activate RF chip reset
+   void (*RESET_Off)(void);           // desactive RF chip reset
+
+                                      // the following are in units of the synthesizer with 8 extra bits of precision
+   uint32_t BaseFrequency;            // [32MHz/2^19/2^8] base frequency = channel #0
+    int32_t FrequencyCorrection;      // [32MHz/2^19/2^8] frequency correction (due to Xtal offset)
+   uint32_t ChannelSpacing;           // [32MHz/2^19/2^8] spacing between channels
+    int16_t Channel;                  // [       integer] channel being used
+
+  // private:
+   static uint32_t calcSynthFrequency(uint32_t Frequency) { return (((uint64_t)Frequency<<16)+7812)/15625; }
+
+  public:
+   void setBaseFrequency(uint32_t Frequency=868200000) { BaseFrequency=calcSynthFrequency(Frequency); }
+   void setChannelSpacing(uint32_t  Spacing=   200000) { ChannelSpacing=calcSynthFrequency(Spacing); }
+   void setFrequencyCorrection(int32_t Correction=0)
+   { if(Correction<0) FrequencyCorrection = -calcSynthFrequency(-Correction);
+                else  FrequencyCorrection =  calcSynthFrequency( Correction); }
+   void setChannel(int16_t newChannel)
+   { Channel=newChannel; WriteFreq((BaseFrequency+ChannelSpacing*Channel+FrequencyCorrection+128)>>8); }
+   uint8_t getChannel(void) const { return Channel; }
+
+#ifdef USE_BLOCK_SPI
+
+   static uint16_t SwapBytes(uint16_t Word) { return (Word>>8) | (Word<<8); }
+
+   uint8_t WriteByte(uint8_t Byte, uint8_t Addr=0) // write Byte
+   { // printf("WriteByte(0x%02X, 0x%02X)\n", Byte, Addr);
+     uint8_t *Ret = Block_Write(&Byte, 1, Addr); return *Ret; }
+
+   void WriteWord(uint16_t Word, uint8_t Addr=0) // write Word => two bytes
+   { // printf("WriteWord(0x%04X, 0x%02X)\n", Word, Addr);
+     uint16_t Swapped = SwapBytes(Word); Block_Write((uint8_t *)&Swapped, 2, Addr); }
+
+   uint8_t ReadByte (uint8_t Addr=0)
+   { uint8_t *Ret = Block_Read(1, Addr);
+     // printf("ReadByte(0x%02X) => 0x%02X\n", Addr, *Ret );
+     return *Ret; }
+
+   uint16_t ReadWord (uint8_t Addr=0)
+   { uint16_t *Ret = (uint16_t *)Block_Read(2, Addr);
+     // printf("ReadWord(0x%02X) => 0x%04X\n", Addr, SwapBytes(*Ret) );
+     return SwapBytes(*Ret); }
+
+   void WriteBytes(const uint8_t *Data, uint8_t Len, uint8_t Addr=0)
+   { Block_Write(Data, Len, Addr); }
+
+   void WriteFreq(uint32_t Freq)                       // [32MHz/2^19] Set center frequency in units of RFM69 synth.
+   { const uint8_t Addr = REG_FRFMSB;
+     uint8_t Buff[4];
+     Buff[0] = Freq>>16;
+     Buff[1] = Freq>> 8;
+     Buff[2] = Freq    ;
+     Buff[3] =        0;
+     Block_Write(Buff, 3, Addr); }
+
+   void WritePacket(const uint8_t *Data, uint8_t Len=26)         // write the packet data (26 bytes)
+   { uint8_t Packet[2*Len];
+     uint8_t PktIdx=0;
+     for(uint8_t Idx=0; Idx<Len; Idx++)
+     { uint8_t Byte=Data[Idx];
+       Packet[PktIdx++]=ManchesterEncode[Byte>>4];                               // software manchester encode every byte
+       Packet[PktIdx++]=ManchesterEncode[Byte&0x0F];
+     }
+     Block_Write(Packet, 2*Len, REG_FIFO);
+   }
+
+   void ReadPacket(uint8_t *Data, uint8_t *Err, uint8_t Len=26)     // read packet data from FIFO
+   { uint8_t *Packet = Block_Read(2*Len, REG_FIFO);
+     uint8_t PktIdx=0;
+     for(uint8_t Idx=0; Idx<Len; Idx++)
+     { uint8_t ByteH = Packet[PktIdx++];
+       ByteH = ManchesterDecode[ByteH]; uint8_t ErrH=ByteH>>4; ByteH&=0x0F; // decode manchester, detect (some) errors
+       uint8_t ByteL = Packet[PktIdx++];
+       ByteL = ManchesterDecode[ByteL]; uint8_t ErrL=ByteL>>4; ByteL&=0x0F;
+       Data[Idx]=(ByteH<<4) | ByteL;
+       Err [Idx]=(ErrH <<4) | ErrL ;
+     }
+   }
+
+#else // single Byte transfer SPI
+
+  private:
+   uint8_t WriteByte(uint8_t Byte, uint8_t Addr=0) const  // write Byte
+   { Select();
+     TransferByte(Addr | 0x80);
+     uint8_t Old=TransferByte(Byte);
+     Deselect();
+     return Old; }
+
+   uint16_t WriteWord(uint16_t Word, uint8_t Addr=0) const // write Word => two bytes
+   { Select();
+     TransferByte(Addr | 0x80);
+     uint16_t Old=TransferByte(Word>>8);             // upper byte first
+     Old = (Old<<8) | TransferByte(Word&0xFF);       // lower byte second
+     Deselect();
+     return Old; }
+
+   void WriteBytes(const uint8_t *Data, uint8_t Len, uint8_t Addr=0) const
+   { Select();
+     TransferByte(Addr | 0x80);
+     for(uint8_t Idx=0; Idx<Len; Idx++)
+     { TransferByte(Data[Idx]); }
+     Deselect(); }
+
+   uint8_t ReadByte (uint8_t Addr=0) const
+   { Select();
+     TransferByte(Addr);
+     uint8_t Byte=TransferByte(0);
+     Deselect();
+     return Byte; }
+
+   uint16_t ReadWord (uint8_t Addr=0) const
+   { Select();
+     TransferByte(Addr);
+     uint16_t Word=TransferByte(0);
+     Word = (Word<<8) | TransferByte(0);
+     Deselect();
+     return Word; }
+
+  public:
+   uint32_t WriteFreq(uint32_t Freq) const                       // [32MHz/2^19] Set center frequency in units of RFM69 synth.
+   { const uint8_t Addr = REG_FRFMSB;
+     Select();
+     TransferByte(Addr | 0x80);
+     uint32_t Old  =  TransferByte(Freq>>16);
+     Old = (Old<<8) | TransferByte(Freq>>8);
+     Old = (Old<<8) | TransferByte(Freq);                        // actual change in the frequency happens only when the LSB is written
+     Deselect();
+     return Old; }                                               // return the previously set frequency
+
+   void WritePacket(const uint8_t *Data, uint8_t Len=26) const   // write the packet data (26 bytes)
+   { const uint8_t Addr=REG_FIFO;                                // write to FIFO
+     Select();
+     TransferByte(Addr | 0x80);
+     for(uint8_t Idx=0; Idx<Len; Idx++)
+     { uint8_t Byte=Data[Idx];
+       TransferByte(ManchesterEncode[Byte>>4]);                  // software manchester encode every byte
+       TransferByte(ManchesterEncode[Byte&0x0F]);
+     }
+     Deselect();
+   }
+
+   void ReadPacket(uint8_t *Data, uint8_t *Err, uint8_t Len=26) const // read packet data from FIFO
+   { const uint8_t Addr=REG_FIFO;
+     Select();
+     TransferByte(Addr);
+     for(uint8_t Idx=0; Idx<Len; Idx++)
+     { uint8_t ByteH = 0;
+       ByteH = TransferByte(ByteH);
+       ByteH = ManchesterDecode[ByteH]; uint8_t ErrH=ByteH>>4; ByteH&=0x0F; // decode manchester, detect (some) errors
+       uint8_t ByteL = 0;
+       ByteL = TransferByte(ByteL);
+       ByteL = ManchesterDecode[ByteL]; uint8_t ErrL=ByteL>>4; ByteL&=0x0F;
+       Data[Idx]=(ByteH<<4) | ByteL;
+       Err [Idx]=(ErrH <<4) | ErrL ;
+     }
+     Deselect();
+   }
+
+#endif // USE_BLOCK_SPI
+
+#ifdef WITH_RFM69
+   void WriteSYNC(uint8_t WriteSize, uint8_t SyncTol, const uint8_t *SyncData)
+   { if(SyncTol>7) SyncTol=7;
+     if(WriteSize>8) WriteSize=8;
+     WriteBytes(SyncData+(8-WriteSize), WriteSize, REG_SYNCVALUE1);          // write the SYNC, skip some initial bytes
+     WriteByte(  0x80 | ((WriteSize-1)<<3) | SyncTol, REG_SYNCCONFIG);       // write SYNC length [bytes]
+     WriteWord( 9-WriteSize, REG_PREAMBLEMSB); }                             // write preamble length [bytes] (page 71)
+//              ^ 8 or 9 ?
+#endif
+
+#ifdef WITH_RFM95
+   void WriteSYNC(uint8_t WriteSize, uint8_t SyncTol, const uint8_t *SyncData)
+   { if(SyncTol>7) SyncTol=7;
+     if(WriteSize>8) WriteSize=8;
+     WriteBytes(SyncData+(8-WriteSize), WriteSize, REG_SYNCVALUE1);        // write the SYNC, skip some initial bytes
+     WriteByte(  0x90 | (WriteSize-1), REG_SYNCCONFIG);                     // write SYNC length [bytes]
+     WriteWord( 9-WriteSize, REG_PREAMBLEMSB); }                           // write preamble length [bytes] (page 71)
+//              ^ 8 or 9 ?
+#endif
+
+   void    WriteMode(uint8_t Mode=RF_OPMODE_STANDBY) { WriteByte(Mode, REG_OPMODE); } // SLEEP/STDBY/FSYNTH/TX/RX
+   uint8_t ReadMode (void) { return ReadByte(REG_OPMODE); }
+   uint8_t ModeReady(void) { return ReadByte(REG_IRQFLAGS1)&0x80; }
+
+   uint16_t ReadIrqFlags(void) { return ReadWord(REG_IRQFLAGS1); }
+
+   void ClearIrqFlags(void)    const { WriteWord(RF_IRQ_FifoOverrun | RF_IRQ_Rssi, REG_IRQFLAGS1); }
+
+#ifdef WITH_RFM69
+   void WriteTxPower_W(int8_t TxPower=10) const // [dBm] for RFM69W: -18..+13dBm
+   { if(TxPower<(-18)) TxPower=(-18);           // check limits
+     if(TxPower>  13 ) TxPower=  13 ;
+     WriteByte(  0x80+(18+TxPower), REG_PALEVEL);
+     WriteByte(  0x1A             , REG_OCP);
+     WriteByte(  0x55             , REG_TESTPA1);
+     WriteByte(  0x70             , REG_TESTPA2);
+   }
+
+   void WriteTxPower_HW(int8_t TxPower=10) const // [dBm] // for RFM69HW: -14..+20dBm
+   { if(TxPower<(-14)) TxPower=(-14);            // check limits
+     if(TxPower>  20 ) TxPower=  20 ;
+     if(TxPower<=17)
+     { WriteByte(  0x60+(14+TxPower), REG_PALEVEL);
+       WriteByte(  0x1A             , REG_OCP);
+       WriteByte(  0x55             , REG_TESTPA1);
+       WriteByte(  0x70             , REG_TESTPA2);
+     } else
+     { WriteByte(  0x60+(11+TxPower), REG_PALEVEL);
+       WriteByte(  0x0F             , REG_OCP);
+       WriteByte(  0x5D             , REG_TESTPA1);
+       WriteByte(  0x7C             , REG_TESTPA2);
+     }
+   }
+
+   void WriteTxPower(int8_t TxPower, uint8_t isHW) const
+   { WriteByte(  0x0C, REG_PARAMP); // Tx ramp up/down time = 20us (page 66)
+     if(isHW) WriteTxPower_HW(TxPower);
+         else WriteTxPower_W (TxPower);  }
+
+   void WriteTxPowerMin(void) const { WriteTxPower_W(-18); } // set minimal Tx power and setup for reception
+
+   int Configure(int16_t Channel, const uint8_t *Sync)
+   { WriteMode(RF_OPMODE_STANDBY);          // mode = STDBY
+     ClearIrqFlags();
+     WriteByte(  0x02, REG_DATAMODUL);     // Packet mode, FSK, BT=0.5
+     WriteWord(0x0140, REG_BITRATEMSB);    // bit rate = 100kbps
+     WriteWord(0x0333, REG_FDEVMSB);       // FSK deviation = +/-50kHz
+     setChannel(Channel);                    // operating channel
+     WriteSYNC(8, 7, Sync);                  // SYNC pattern (setup for reception)
+     WriteByte(  0x00, REG_PACKETCONFIG1); // Fixed size packet, no DC-free encoding, no CRC, no address filtering
+     WriteByte(0x80+51, REG_FIFOTHRESH);   // TxStartCondition=FifoNotEmpty, FIFO threshold = 51 bytes
+     WriteByte(  2*26, REG_PAYLOADLENGTH); // Packet size = 26 bytes Manchester encoded into 52 bytes
+     WriteByte(  0x02, REG_PACKETCONFIG2); // disable encryption (it is permanent between resets !), AutoRxRestartOn=1
+     WriteByte(  0x00, REG_AUTOMODES);
+     WriteTxPowerMin();                      // TxPower (setup for reception)
+     WriteByte(  0x88, REG_LNA);           // bit #7 = LNA input impedance: 0=50ohm or 1=200ohm ?
+     WriteByte( 2*114, REG_RSSITHRESH);    // RSSI threshold = -114dBm
+     WriteByte(  0x4A, REG_RXBW);          // +/-100kHz Rx bandwidth => p.27+67
+     WriteByte(  0x89, REG_AFCBW);         // +/-200kHz Rx bandwidth while AFC
+     WriteWord(0x4047, REG_DIOMAPPING1);   // DIO signals: DIO0=01, DIO4=01, ClkOut=OFF
+                                             // RX: DIO0 = PayloadReady, DIO4 = Rssi
+                                             // TX: DIO0 = TxReady,      DIO4 = TxReady
+     WriteByte(  0x2D, REG_TESTLNA);       // enable LNA, sensitivity up by 3dB ?
+     WriteByte(  0x20, REG_TESTDAGC);      // 0x20 when AfcLowBetaOn, 0x30 otherwise-> page 25
+     WriteByte(  0x00, REG_AFCFEI);        // AfcAutoOn=0, AfcAutoclearOn=0
+     WriteByte(  0x20, REG_AFCCTRL);       // AfcLowBetaOn=1 -> page 64 -> page 33
+     WriteByte(   +10, REG_TESTAFC);       // [488Hz] if AfcLowBetaOn
+     return 0; }
+#endif
+
+#ifdef WITH_RFM95
+
+   void WriteTxPower(int8_t TxPower=0)
+   { if(TxPower<0) TxPower=0;
+     else if(TxPower>17) TxPower=17;
+     if(TxPower<=14)
+     { WriteByte(0x70 | TxPower    , REG_PACONFIG);
+     }
+     else
+     { WriteByte(0xF0 | (TxPower-2), REG_PACONFIG);
+     }
+   }
+
+   void WriteTxPowerMin(void) { WriteTxPower(0); }
+
+   int Configure(int16_t Channel, const uint8_t *Sync)
+   { WriteMode(RF_OPMODE_STANDBY);              // mode: STDBY, modulation: FSK, no LoRa
+     // usleep(1000);
+     WriteTxPower(0);
+     // ClearIrqFlags();
+     WriteWord(0x0140, REG_BITRATEMSB);         // bit rate = 100kbps (32MHz/100000)
+     // ReadWord(REG_BITRATEMSB);
+     WriteWord(0x0333, REG_FDEVMSB);            // FSK deviation = +/-50kHz [32MHz/(1<<19)]
+     // ReadWord(REG_FDEVMSB);
+     setChannel(Channel);                       // operating channel
+     WriteSYNC(8, 7, Sync);                     // SYNC pattern (setup for reception)
+     WriteByte(  0x00, REG_PACKETCONFIG1);      // Fixed size packet, no DC-free encoding, no CRC, no address filtering
+     WriteByte(  0x40, REG_PACKETCONFIG2);      // Packet mode
+     WriteByte(    51, REG_FIFOTHRESH);         // TxStartCondition=FifoNotEmpty, FIFO threshold = 51 bytes
+     WriteByte(  2*26, REG_PAYLOADLENGTH);      // Packet size = 26 bytes Manchester encoded into 52 bytes
+     WriteWord(0x00C0, REG_DIOMAPPING1);        // DIO signals: DIO0=00, DIO4=11
+     WriteByte(  0x4A, REG_RXBW);               // +/-100kHz Rx bandwidth => p.27+67
+     WriteByte(  0x49, REG_PARAMP);             // BT=0.5 shaping, 40us ramp up/down
+
+     return 0; }
+
+     uint8_t ReadLowBat(void)  { return ReadByte(REG_LOWBAT ); }
+
+#endif
+
+     uint8_t ReadVersion(void) { return ReadByte(REG_VERSION); }           // normally returns: 0x24
+
+#ifdef WITH_RFM69
+     void    TriggerRSSI(void) { WriteByte(0x01, REG_RSSICONFIG); }        // trigger measurement
+     uint8_t ReadyRSSI(void)   { return ReadByte(REG_RSSICONFIG) & 0x02; } // ready ?
+#endif
+     uint8_t ReadRSSI(void)    { return ReadByte(REG_RSSIVALUE); }         // read value: RSS = -Value/2
+
+#ifdef WITH_RFM69
+     void    TriggerTemp(void) { WriteByte(0x08, REG_TEMP1); }             // trigger measurement
+     uint8_t RunningTemp(void) { return ReadByte(REG_TEMP1) & 0x04; }      // still running ?
+     uint8_t ReadTemp(void)    { return ReadByte(REG_TEMP2); }             // read value: -1 deg/LSB
+#endif
+#ifdef WITH_RFM95
+     uint8_t ReadTemp(void)    { return ReadByte(REG_TEMP); }              // read value: -1 deg/LSB
+#endif
+/*
+     void Dump(uint8_t EndAddr=0x20)
+     { printf("RFM_TRX[] =");
+       for(uint8_t Addr=1; Addr<=EndAddr; Addr++)
+       { printf(" %02X", ReadByte(Addr)); }
+       printf("\n");
+     }
+*/
+} ;
+
+
