@@ -19,7 +19,7 @@ void UART_ConfigGPIO(GPIO_TypeDef* GPIO, uint16_t InpPin, uint16_t OutPin)
   GPIO_Init(GPIO, &GPIO_InitStructure);
 
   GPIO_InitStructure.GPIO_Pin   = OutPin;          // Configure USART Tx (output) pin as alternate function push-pull
-  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_2MHz;
   GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_AF_PP;
   GPIO_Init(GPIO, &GPIO_InitStructure);
 }

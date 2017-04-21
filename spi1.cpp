@@ -9,18 +9,18 @@ void SPI1_Configuration(void)
 
   GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_4;                 // SS: output
   GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_Out_PP;
-  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_10MHz;
   GPIO_Init(GPIOA, &GPIO_InitStructure);
   SPI1_Deselect();
 
   GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_5 | GPIO_Pin_7;    // CLK, MOSI: output
   GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_AF_PP;
-  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_10MHz;
   GPIO_Init(GPIOA, &GPIO_InitStructure);
 
   GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_6;                // MISO: input
   GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_IPU;
-  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_10MHz;
   GPIO_Init(GPIOA, &GPIO_InitStructure);
 
   SPI_InitStructure.SPI_Direction = SPI_Direction_2Lines_FullDuplex;

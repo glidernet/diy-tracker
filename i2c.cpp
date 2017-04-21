@@ -49,7 +49,7 @@ void I2C_Configuration(I2C_TypeDef* I2Cx, uint32_t ClockSpeed) // initialize I2C
   { RCC_APB1PeriphClockCmd(RCC_APB1Periph_I2C1 , ENABLE );   // enable the clock for I2C1
 
     GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_6 | GPIO_Pin_7; // I2C #1 runs on GPIO pins 6/7
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;        // 2MHz ?
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_2MHz;        // 2MHz ?
     GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_AF_OD;         // open-drain, but can't make pull-ups
     GPIO_Init(GPIOB, &GPIO_InitStructure);                   // setup port B
   }
@@ -57,7 +57,7 @@ void I2C_Configuration(I2C_TypeDef* I2Cx, uint32_t ClockSpeed) // initialize I2C
   { RCC_APB1PeriphClockCmd(RCC_APB1Periph_I2C2 , ENABLE );   // enable the clock for I2C1
 
     GPIO_InitStructure.GPIO_Pin = GPIO_Pin_10 | GPIO_Pin_11; // I2C #1 runs on GPIO pins 6/7
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;        // 2MHz ?
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_2MHz;        // 2MHz ?
     GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_AF_OD;         // open-drain, but can't make pull-ups
     GPIO_Init(GPIOB, &GPIO_InitStructure);                   // setup port B
   }
