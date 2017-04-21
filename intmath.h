@@ -18,10 +18,10 @@ int32_t IntSine(uint16_t Angle);
 // max. result error is about 2.3e-7
 int32_t IntSine(uint32_t Angle);
 
-const int16_t Isine_Scale=0x4000;
-
 // less precise sine for 16-bit angles
-int16_t Isin(int16_t Angle);
+const int16_t Isine_Scale=0x4000;
+int16_t        Isin(int16_t Angle);
+int16_t inline Icos(int16_t Angle) { return Isin(Angle+0x4000); }
 
 // atan2(Y, X)
 // max. result error is 1/6 degree

@@ -13,9 +13,6 @@
 
 #include "ogn.h"
 
-#include "uart1.h"
-#include "uart2.h"
-
 #include "parameters.h"
 
 #include "gps.h"
@@ -30,12 +27,16 @@
 
 #include "main.h"
 
+#ifdef WITH_GPS_ENABLE
 // PA0 is GPS enable
 inline void GPS_DISABLE(void) { GPIO_ResetBits(GPIOA, GPIO_Pin_0); }
 inline void GPS_ENABLE (void) { GPIO_SetBits  (GPIOA, GPIO_Pin_0); }
+#endif
 
+#ifdef WITH_GPS_PPS
 // PA1 is GPS PPS
 inline int GPS_PPS_isOn(void) { return GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_1) != Bit_RESET; }
+#endif
 
 #ifdef WITH_PPS_IRQ
 TickType_t PPS_IRQ_TickCount;                       // [RTOS tick] (coarse) time of previous PPS
@@ -66,14 +67,18 @@ void GPS_Configuration (void)
 
   RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
 
+#ifdef WITH_GPS_ENABLE
   GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_0;        // Configure PA.00 as output: GPS Enable(HIGH) / Shutdown(LOW)
   GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_Out_PP;
   GPIO_InitStructure.GPIO_Speed = GPIO_Speed_2MHz;
   GPIO_Init(GPIOA, &GPIO_InitStructure);
+#endif
 
+#ifdef WITH_GPS_PPS
   GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_1;         // Configure PA.01 as input: PPS from GPS
   GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_IPD;
   GPIO_Init(GPIOA, &GPIO_InitStructure);
+#endif
 
 #ifdef WITH_PPS_IRQ
   // we want interrupt on rising PPS from GPS
@@ -89,7 +94,10 @@ void GPS_Configuration (void)
 
 #endif
 
-  GPS_ENABLE(); }
+#ifdef WITH_GPS_ENABLE
+  GPS_ENABLE();
+#endif
+}
 
 #ifdef WITH_PPS_IRQ
 #ifdef __cplusplus
@@ -151,7 +159,7 @@ volatile  uint8_t   GPS_Sec=0;           // [sec] UTC time: second
           int32_t   GPS_Latitude=0;
           int32_t   GPS_Longitude=0;
           int16_t   GPS_GeoidSepar=0;    // [0.1m]
-          int32_t   GPS_LatCosine=0x60000000;     // [0.1m]
+         uint16_t   GPS_LatCosine=0x3000;  //
 //          uint8_t   GPS_FreqPlan=0;      //
 
 // static char Line[64];                  // for console output formating
@@ -163,9 +171,9 @@ uint16_t PPS_Phase(void)                              //
 
 // ----------------------------------------------------------------------------
 
-static void GPS_PPS_On(void)                        // called on rising edge of PPS
+static void GPS_PPS_On(uint8_t Delay=0)               // called on rising edge of PPS
 { LED_PCB_Flash(50);
-  PPS_TickCount=xTaskGetTickCount();
+  PPS_TickCount=xTaskGetTickCount()-Delay;
   uint8_t Sec=GPS_Sec; Sec++; if(Sec>=60) Sec=0; GPS_Sec=Sec;
   GPS_UnixTime++; }
 
@@ -198,13 +206,21 @@ static void GPS_LockEnd(void)                       // called when GPS looses a 
 
 // ----------------------------------------------------------------------------
 
+const uint8_t GPS_BurstDelay=70;                                           // [ms] time after the PPS when the data burst starts on the UART
+
 static void GPS_BurstStart(void)                                           // when GPS starts sending the data on the serial port
-{ Burst_TickCount=xTaskGetTickCount(); }
+{ Burst_TickCount=xTaskGetTickCount();
+  // TickType_t TicksSincePPS=Burst_TickCount-PPS_TickCount;
+  // if(TicksSincePPS>10500)
+#ifndef WITH_GPS_PPS
+  GPS_PPS_On(GPS_BurstDelay);
+#endif
+}
 
 static void GPS_BurstEnd(void)                                             // when GPS stops sending data on the serial port
 { if(Position[PosIdx].isComplete())                                        // position data complete
   { if(Position[PosIdx].isTimeValid())
-    { GPS_Sec=Position[PosIdx].Sec;
+    { GPS_Sec=Position[PosIdx].Sec;                                        // get the second - this is important for time in the OGN packets
       if(Position[PosIdx].isDateValid())
       { GPS_UnixTime=Position[PosIdx].getUnixTime(); GPS_FatTime=Position[PosIdx].getFatTime(); }
     }
@@ -262,10 +278,10 @@ static void GPS_NMEA(void)                                                 // wh
   Position[PosIdx].ReadNMEA(NMEA);                                         // read position elements from NMEA
   if( NMEA.isGxRMC() || NMEA.isGxGGA() || NMEA.isGxGSA() || NMEA.isGPTXT() )
   { static char CRNL[3] = "\r\n";
-    xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
-    Format_Bytes(UART1_Write, NMEA.Data, NMEA.Len);
-    Format_Bytes(UART1_Write, (const uint8_t *)CRNL, 2);
-    xSemaphoreGive(UART1_Mutex);
+    xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
+    Format_Bytes(CONS_UART_Write, NMEA.Data, NMEA.Len);
+    Format_Bytes(CONS_UART_Write, (const uint8_t *)CRNL, 2);
+    xSemaphoreGive(CONS_Mutex);
 #ifdef WITH_SDLOG
     xSemaphoreTake(Log_Mutex, portMAX_DELAY);
     Format_Bytes(Log_Write, NMEA.Data, NMEA.Len);
@@ -297,15 +313,12 @@ void vTaskGPS(void* pvParameters)
   PPS_TickCount=0;
   Burst_TickCount=0;
 
-  // UART2_Configuration(Parameters.GPSbaud);
-  // GPS_Configuration();
-
   vTaskDelay(5);
 
-  xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
-  Format_String(UART1_Write, "TaskGPS:");
-  Format_String(UART1_Write, "\n");
-  xSemaphoreGive(UART1_Mutex);
+  xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
+  Format_String(CONS_UART_Write, "TaskGPS:");
+  Format_String(CONS_UART_Write, "\n");
+  xSemaphoreGive(CONS_Mutex);
 
   int Burst=(-1);                                                         // GPS transmission ongoing or line is idle ?
   { int LineIdle=0;                                                       // counts idle time for the GPS data
@@ -316,15 +329,15 @@ void vTaskGPS(void* pvParameters)
     PosIdx=0;
     // PktIdx=0;
 
-    for( ; ; )                                                             //
+    for( ; ; )                                                             // every milisecond (RTOS time tick)
     { vTaskDelay(1);                                                       // wait for the next time tick
-
+#ifdef WITH_GPS_PPS
       if(GPS_PPS_isOn()) { if(!PPS) { PPS=1; GPS_PPS_On();  } }            // monitor GPS PPS signal
-                    else { if( PPS) { PPS=0; GPS_PPS_Off(); } }
-
+                    else { if( PPS) { PPS=0; GPS_PPS_Off(); } }            // and call handling calls
+#endif
       LineIdle++;                                                           // count idle time
       for( ; ; )
-      { uint8_t Byte; int Err=UART2_Read(Byte); if(Err<=0) break;           // get Byte from serial port
+      { uint8_t Byte; int Err=GPS_UART_Read(Byte); if(Err<=0) break;        // get Byte from serial port
         LineIdle=0;                                                         // if there was a byte: restart idle counting
         NMEA.ProcessByte(Byte); UBX.ProcessByte(Byte);                      // process through the NMEA interpreter
         if(NMEA.isComplete())                                               // NMEA completely received ?

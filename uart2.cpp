@@ -12,8 +12,8 @@
 
 #include "fifo.h"
 
-VolatileFIFO<uint8_t, 32> UART2_RxFIFO;
-VolatileFIFO<uint8_t, 32> UART2_TxFIFO;
+VolatileFIFO<uint8_t, UART2_RxFIFO_Size> UART2_RxFIFO;
+VolatileFIFO<uint8_t, UART2_TxFIFO_Size> UART2_TxFIFO;
 
 // UART2 pins:
 // PA4 	USART2_CK

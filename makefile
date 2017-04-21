@@ -1,9 +1,9 @@
 # Tool chain downloaded from: https://launchpad.net/gcc-arm-embedded
 # unpacked to a directory: TPATH
 
-TPATH = ../gcc-arm-none-eabi-4.9/bin
+# TPATH = ../gcc-arm-none-eabi-4.9/bin
 # TPATH = ../gcc-arm-none-eabi-5.4/bin
-# TPATH = /usr/bin
+TPATH = /usr/bin
 TCHAIN = arm-none-eabi
 
 #-------------------------------------------------------------------------------
@@ -21,16 +21,21 @@ TCHAIN = arm-none-eabi
 # rfm69w ... for the lower tx power RF chip
 # rfm95
 # relay ... packet-relay code (conditional code not implemented yet)
-# pps_irq
+# pps_irq .. PPS signal makes an IRQ and the RTOS clock is adjusted in frequency to mathc the GPS (but not very precise)
+# gps_pps ... GPS does deliver PPS, otherwise we get the timing from when the GPS starts sending serial data
+# gps_enable ... GPS senses the "enable" line so it is possibly to shut it down
+# swap_uarts ... use UART1 for GPS and UART2 for console
+# ogn_cube_1 ... Tracker hardware by Miroslav Cervenka
 
 # WITH_OPTS = rfm69 beeper vario bmp180 knob  relay config pps_irq # for regular tracker with a knob and BMP180 but no SD card
 # WITH_OPTS = rfm69 beeper vario bmp180 sdlog relay config # for the test system (no knob but the SD card)
-WITH_OPTS = rfm69 beeper vario bmp180 relay config pps_irq
+WITH_OPTS = rfm69 beeper vario bmp180 relay config pps_irq gps_pps gps_enable
 # WITH_OPTS = rfm69 beeper relay config
-
 # WITH_OPTS = rfm95 beeper vario bmp180 relay config
 
-MCU = STM32F103C8  # STM32F103C8 for no-name STM32F1 board, STM32F103CB for Maple mini
+# WITH_OPTS = rfm69 relay config swap_uarts ogn_cube_1 # for OGN-CUBE-1
+
+# MCU = STM32F103C8  # STM32F103C8 for no-name STM32F1 board, STM32F103CB for Maple mini
 
 #-------------------------------------------------------------------------------
 
@@ -134,8 +139,35 @@ ifneq ($(findstring relay,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_RELAY
 endif
 
+ifneq ($(findstring gps_pps,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_GPS_PPS
 ifneq ($(findstring pps_irq,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_PPS_IRQ
+endif
+endif
+
+ifneq ($(findstring gps_enable,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_GPS_ENABLE
+endif
+
+ifneq ($(findstring swap_uarts,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_SWAP_UARTS
+  WITH_DEFS += -DUART1_RxFIFO_Size=32    # GPS
+  WITH_DEFS += -DUART1_TxFIFO_Size=32
+  WITH_DEFS += -DUART2_RxFIFO_Size=32    # console
+  WITH_DEFS += -DUART2_TxFIFO_Size=256
+else
+  WITH_DEFS += -DUART1_RxFIFO_Size=32    # console
+  WITH_DEFS += -DUART1_TxFIFO_Size=256
+  WITH_DEFS += -DUART2_RxFIFO_Size=32    # GPS
+  WITH_DEFS += -DUART2_TxFIFO_Size=32
+endif
+
+ifneq ($(findstring ogn_cube_1,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_OGN_CUBE_1
+  MCU = STM32F103CB
+else
+  MCU = STM32F103C8
 endif
 
 #-------------------------------------------------------------------------------

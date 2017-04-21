@@ -12,18 +12,15 @@
 #include "stm32f10x_iwdg.h"
 #include "misc.h"
 
-#include "format.h"
-
 #include <FreeRTOS.h>
 #include <task.h>
 #include <semphr.h>
 #include <queue.h>
 
+#include "main.h"
 
+#include "format.h"
 #include "fifo.h"
-
-#include "uart1.h"
-#include "uart2.h"
 #include "adc.h"
 
 #ifdef WITH_BEEPER
@@ -44,6 +41,8 @@
 #include "ctrl.h"                    // CTRL task: write log file to SD card
 #include "sens.h"                    // SENS task: read I2C sensors (baro for now)
 #include "knob.h"                    // KNOB task: read user knob
+
+SemaphoreHandle_t CONS_Mutex; // console port Mutex
 
 FlashParameters Parameters; // parameters to be stored in Flash, on the last page
 
@@ -115,6 +114,32 @@ FlashParameters Parameters; // parameters to be stored in Flash, on the last pag
 //                   GND     PB12 SPI2.SS   -> SD card
 
 
+// ---------------------------------------------------------------------------------------
+
+// OGN-CUBE-1 board by Miroslav:
+
+// CPU: STM32F103CBT6
+
+// LED    <-  PA 1
+
+// Console <- PA 2 USART2.Tx
+// COnsole -> PA 3 USART2.Rx
+
+// GPS    <-  PA 9 USART1.Tx
+// GPS    ->  PA10 USART1.Rx
+
+// Baro <->   PB10 I2C2.SCL
+// Baro <->   PB11 I2C2.SDA
+
+// RF.SS    <- PB 0
+// RF.RESET <- PB 1
+// RF.DIO0  -> PB 2
+// RF.SCK   <- PA 5 SPI1.SCK
+// RF.MISO  -> PA 6 SPI1.MISO
+// RF.MOSI  <- PA 7 SPI1.MOSI
+
+// ---------------------------------------------------------------------------------------
+
 // Board pin-out: Maple Mini: CPU chip facing up
 
 //                     VCC            VCC
@@ -178,19 +203,32 @@ void RCC_Configuration(void)
 
 // ======================================================================================
 
+#ifdef WITH_OGN_CUBE_1
+inline void LED_PCB_On   (void) { GPIO_ResetBits(GPIOA, GPIO_Pin_1); }
+inline void LED_PCB_Off  (void) { GPIO_SetBits  (GPIOA, GPIO_Pin_1); }
+#else
 inline void LED_PCB_On   (void) { GPIO_ResetBits(GPIOC, GPIO_Pin_13); }
 inline void LED_PCB_Off  (void) { GPIO_SetBits  (GPIOC, GPIO_Pin_13); }
+#endif
 
 void LED_Configuration (void)
 {
   GPIO_InitTypeDef  GPIO_InitStructure;
+#ifdef WITH_OGN_CUBE_1
+  RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
 
+  GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_1;        // Configure PA.1 as output (blue LED on the PCB)
+  GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_Out_PP;
+  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_2MHz;
+  GPIO_Init(GPIOA, &GPIO_InitStructure);
+#else
   RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOC, ENABLE);
 
   GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_13;        // Configure PC.13 as output (blue LED on the PCB)
   GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_Out_PP;
   GPIO_InitStructure.GPIO_Speed = GPIO_Speed_2MHz;
   GPIO_Init(GPIOC, &GPIO_InitStructure);
+#endif
   LED_PCB_Off();
 }
 
@@ -352,19 +390,27 @@ void prvSetupHardware(void)
   // Parameters.setTxPower(+14); // for RFM69HW (H = up to +20dBm Tx power)
   // Parameters.WriteToFlash();
 
+#ifdef WITH_SWAP_UARTS
+  UART2_Configuration(Parameters.CONbaud); // Console/Bluetooth serial adapter
+  UART1_Configuration(Parameters.GPSbaud); // GPS UART
+#else
   UART1_Configuration(Parameters.CONbaud); // Console/Bluetooth serial adapter
-
   UART2_Configuration(Parameters.GPSbaud); // GPS UART
+#endif
+  CONS_Mutex = xSemaphoreCreateMutex();
   GPS_Configuration();                     // GPS PPS and Enable
 
 #ifdef WITH_I2C1
-  I2C1_Configuration(400000);              // 400kHz I2C bus speed
+  I2C_Configuration(I2C1, 400000);         // 400kHz I2C bus speed
+#endif
+
+#ifdef WITH_I2C2
+  I2C_Configuration(I2C2, 400000);         // 400kHz I2C bus speed
 #endif
 
   SPI1_Configuration();                    // SPI1 for the RF chip
   RFM_GPIO_Configuration();                // RFM69(H)W Reset/DIO0/...
   ADC_Configuration();                     // to measure Vref and CPU temp.
-
   LED_Configuration();
 
 #ifdef WITH_BEEPER

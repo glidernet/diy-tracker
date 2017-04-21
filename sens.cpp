@@ -83,7 +83,7 @@ static void ProcBaro()
     uint8_t Err=Baro.AcquireRawTemperature();                             // measure temperature
     if(Err==0) { Baro.CalcTemperature(); AverPress=0; AverCount=0; }      // clear the average
           else { PipeCount=0;
-	         I2C1_Restart(400000); vTaskDelay(20); InitBaro();        // try to recover I2C bus and baro
+	         I2C_Restart(Baro.Bus, 400000); vTaskDelay(20); InitBaro(); // try to recover I2C bus and baro
 		 return; }
 
     for(uint8_t Idx=0; Idx<24; Idx++)
@@ -147,9 +147,9 @@ static void ProcBaro()
         Len+=Format_SignDec(Line+Len, ClimbRate,   3, 2);                // [m/s] climb rate
         Line[Len++]=',';
         Len+=NMEA_AppendCheckCRNL(Line, Len);
-        xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
-        Format_String(UART1_Write, Line, Len);                           // send NMEA sentence to the console (UART1)
-        xSemaphoreGive(UART1_Mutex);
+        xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
+        Format_String(CONS_UART_Write, Line, Len);                           // send NMEA sentence to the console (UART1)
+        xSemaphoreGive(CONS_Mutex);
 
         Len=0;                                                           // start preparing the PGRMZ NMEA sentence
         Len+=Format_String(Line+Len, "$PGRMZ,");
@@ -158,9 +158,9 @@ static void ProcBaro()
         Len+=Format_String(Line+Len, "m,");                              // normally f for feet, but metres and m works with XcSoar
         Len+=Format_String(Line+Len, "3");                               // 1 no fix, 2 - 2D, 3 - 3D; assume 3D for now
         Len+=NMEA_AppendCheckCRNL(Line, Len);
-        xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
-        Format_String(UART1_Write, Line, Len);                           // send NMEA sentence to the console (UART1)
-        xSemaphoreGive(UART1_Mutex);
+        xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
+        Format_String(CONS_UART_Write, Line, Len);                           // send NMEA sentence to the console (UART1)
+        xSemaphoreGive(CONS_Mutex);
 
 #ifdef WITH_SDLOG
         xSemaphoreTake(Log_Mutex, portMAX_DELAY);
@@ -194,15 +194,15 @@ void vTaskSENS(void* pvParameters)
   bool Detected = InitBaro();
 #endif
 
-  xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
-  Format_String(UART1_Write, "TaskSENS:");
+  xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
+  Format_String(CONS_UART_Write, "TaskSENS:");
 #ifdef WITH_BMP180
-  Format_String(UART1_Write, " BMP180: ");
-  if(Detected) Format_String(UART1_Write, " detected");
-         else  Format_String(UART1_Write, " not there !");
+  Format_String(CONS_UART_Write, " BMP180: ");
+  if(Detected) Format_String(CONS_UART_Write, " detected");
+         else  Format_String(CONS_UART_Write, " not there !");
 #endif
-  Format_String(UART1_Write, "\n");
-  xSemaphoreGive(UART1_Mutex);
+  Format_String(CONS_UART_Write, "\n");
+  xSemaphoreGive(CONS_Mutex);
 
   while(1)
   {

@@ -18,7 +18,7 @@ extern           int32_t GPS_Altitude;      // [0.1m] altitude (height above Geo
 extern           int32_t GPS_Latitude;      // [0.0001/60 deg]
 extern           int32_t GPS_Longitude;     // [0.0001/60 deg]
 extern           int16_t GPS_GeoidSepar;    // [0.1m]
-extern           int32_t GPS_LatCosine;     // [1.0/(1<<31)] Latitude Cosine for distance calculations
+extern          uint16_t GPS_LatCosine;     // [1.0/(1<<12)] Latitude Cosine for distance calculations
 extern          uint32_t GPS_TimeSinceLock; // [sec] time since GPS has a valid lock
 // extern           uint8_t GPS_FreqPlan;      // [] frequency (hopping) plan: 1 = Europe/Africa, 2 = USA/Canada, 3 = Australia/South America
 

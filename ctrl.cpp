@@ -9,7 +9,6 @@
 
 #include "ctrl.h"
 
-#include "uart1.h"       // UART1 (console)
 #include "nmea.h"        // NMEA
 #include "parameters.h"  // Parameters in Flash
 #include "format.h"      // output formatting
@@ -33,9 +32,9 @@ static char Line[64];
 
 static void PrintParameters(void)                               // print parameters stored in Flash
 { Parameters.Print(Line);
-  xSemaphoreTake(UART1_Mutex, portMAX_DELAY);                   // ask exclusivity on UART1
-  Format_String(UART1_Write, Line);
-  xSemaphoreGive(UART1_Mutex);                                  // give back UART1 to other tasks
+  xSemaphoreTake(CONS_Mutex, portMAX_DELAY);                   // ask exclusivity on UART1
+  Format_String(CONS_UART_Write, Line);
+  xSemaphoreGive(CONS_Mutex);                                  // give back UART1 to other tasks
 }
 
 static void ProcessCtrlC(void)                                  // print system state to the console
@@ -44,12 +43,12 @@ static void ProcessCtrlC(void)                                  // print system 
 
   size_t FreeHeap = xPortGetFreeHeapSize();
 
-  xSemaphoreTake(UART1_Mutex, portMAX_DELAY);                   // ask exclusivity on UART1
+  xSemaphoreTake(CONS_Mutex, portMAX_DELAY);                   // ask exclusivity on UART1
 
-  Format_String(UART1_Write, "Task  Pr. Stack, ");
-  Format_UnsDec(UART1_Write, (uint32_t)FreeHeap, 4, 3);
-  Format_String(UART1_Write, "kB free\n");
-  // xSemaphoreGive(UART1_Mutex);                                  // give back UART1 to other tasks
+  Format_String(CONS_UART_Write, "Task  Pr. Stack, ");
+  Format_UnsDec(CONS_UART_Write, (uint32_t)FreeHeap, 4, 3);
+  Format_String(CONS_UART_Write, "kB free\n");
+  // xSemaphoreGive(CONS_Mutex);                                  // give back UART1 to other tasks
 
   UBaseType_t uxArraySize = uxTaskGetNumberOfTasks();
   TaskStatus_t *pxTaskStatusArray = (TaskStatus_t *)pvPortMalloc( uxArraySize * sizeof( TaskStatus_t ) );
@@ -65,33 +64,33 @@ static void ProcessCtrlC(void)                                  // print system 
     Line[Len++]='0'+Task->uxCurrentPriority; Line[Len++]=' ';
     Len+=Format_UnsDec(Line+Len, Task->usStackHighWaterMark, 3);
     Line[Len++]='\n'; Line[Len++]=0;
-    // xSemaphoreTake(UART1_Mutex, portMAX_DELAY);                   // ask exclusivity on UART1
-    Format_String(UART1_Write, Line);
-    // xSemaphoreGive(UART1_Mutex);                                  // give back UART1 to other tasks
+    // xSemaphoreTake(CONS_Mutex, portMAX_DELAY);                   // ask exclusivity on UART1
+    Format_String(CONS_UART_Write, Line);
+    // xSemaphoreGive(CONS_Mutex);                                  // give back UART1 to other tasks
   }
   vPortFree( pxTaskStatusArray );
 /*
 #ifdef WITH_PPS_IRQ
   { // only to check SysTick
-  Format_UnsDec(UART1_Write, (uint32_t)(xTaskGetTickCount()-PPS_IRQ_TickCount));
-  UART1_Write(':');
-  Format_UnsDec(UART1_Write, PPS_IRQ_TickTime);
-  UART1_Write(' ');
-  Format_SignDec(UART1_Write, PPS_IRQ_TickTimeDiff);
-  UART1_Write('/');
-  Format_UnsDec(UART1_Write, getSysTick_Reload());
-  UART1_Write(' ');
-  Format_UnsDec(UART1_Write, PPS_IRQ_Period);
-  UART1_Write('/');
-  // Format_SignDec(UART1_Write, PPS_IRQ_AverPeriod.getOutput());
-  // UART1_Write(' ');
-  Format_SignDec(UART1_Write, (PPS_IRQ_AverPeriod.Out*100+128)>>8, 3, 2);
-  UART1_Write('\r'); UART1_Write('\n');
+  Format_UnsDec(CONS_UART_Write, (uint32_t)(xTaskGetTickCount()-PPS_IRQ_TickCount));
+  CONS_UART_Write(':');
+  Format_UnsDec(CONS_UART_Write, PPS_IRQ_TickTime);
+  CONS_UART_Write(' ');
+  Format_SignDec(CONS_UART_Write, PPS_IRQ_TickTimeDiff);
+  CONS_UART_Write('/');
+  Format_UnsDec(CONS_UART_Write, getSysTick_Reload());
+  CONS_UART_Write(' ');
+  Format_UnsDec(CONS_UART_Write, PPS_IRQ_Period);
+  CONS_UART_Write('/');
+  // Format_SignDec(CONS_UART_Write, PPS_IRQ_AverPeriod.getOutput());
+  // CONS_UART_Write(' ');
+  Format_SignDec(CONS_UART_Write, (PPS_IRQ_AverPeriod.Out*100+128)>>8, 3, 2);
+  CONS_UART_Write('\r'); CONS_UART_Write('\n');
   }
 #endif
 */
 Exit:
-  xSemaphoreGive(UART1_Mutex);                                       // give back UART1 to other tasks
+  xSemaphoreGive(CONS_Mutex);                                       // give back UART1 to other tasks
 }
 
 // ================================================================================================
@@ -149,7 +148,7 @@ static void ProcessNMEA(void)     // process a valid NMEA that got to the consol
 static void ProcessInput(void)
 {
   for( ; ; )
-  { uint8_t Byte; int Err=UART1_Read(Byte); if(Err<=0) break; // get byte from console, if none: exit the loop
+  { uint8_t Byte; int Err=CONS_UART_Read(Byte); if(Err<=0) break; // get byte from console, if none: exit the loop
     if(Byte==0x03) ProcessCtrlC();                            // if Ctrl-C received
     NMEA.ProcessByte(Byte);                                   // pass the byte through the NMEA processor
     if(NMEA.isComplete())                                     // if complete NMEA:
@@ -188,48 +187,48 @@ static void Log_Open(void)
   Format_UnsDec(LogName+2,    Date, 6);                           // format the date into the log file name
   LogErr=f_open(&LogFile, LogName, FA_WRITE | FA_OPEN_ALWAYS);    // open the log file
   if(LogErr)
-  { // xSemaphoreTake(UART1_Mutex, portMAX_DELAY);                   // ask exclusivity on UART1
-    // Format_String(UART1_Write, "TaskCTRL: cannot open "); // report open error
-    // Format_String(UART1_Write, LogName);
-    // Format_String(UART1_Write, "\n");
-    // xSemaphoreGive(UART1_Mutex);                                  // give back UART1 to other tasks
+  { // xSemaphoreTake(CONS_Mutex, portMAX_DELAY);                   // ask exclusivity on UART1
+    // Format_String(CONS_UART_Write, "TaskCTRL: cannot open "); // report open error
+    // Format_String(CONS_UART_Write, LogName);
+    // Format_String(CONS_UART_Write, "\n");
+    // xSemaphoreGive(CONS_Mutex);                                  // give back UART1 to other tasks
     return ; }
   LogErr=f_lseek(&LogFile, f_size(&LogFile));                     // move to the end of the file (for append)
   LogOpenTime=xTaskGetTickCount();                                // record the system time when log was open
   if(!LogErr)
-  { xSemaphoreTake(UART1_Mutex, portMAX_DELAY);                   // ask exclusivity on UART1
-    Format_String(UART1_Write, "TaskCTRL: writing to ");          // report open file name
-    Format_String(UART1_Write, LogName);
-    Format_String(UART1_Write, "\n");
-    xSemaphoreGive(UART1_Mutex); }                                // give back UART1 to other tasks
+  { xSemaphoreTake(CONS_Mutex, portMAX_DELAY);                   // ask exclusivity on UART1
+    Format_String(CONS_UART_Write, "TaskCTRL: writing to ");          // report open file name
+    Format_String(CONS_UART_Write, LogName);
+    Format_String(CONS_UART_Write, "\n");
+    xSemaphoreGive(CONS_Mutex); }                                // give back UART1 to other tasks
 }
 
 void Log_WriteData(const char *Data, int DataLen)                 // write the Line to the log file
-{ // xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
-  // Format_String(UART1_Write, "TaskCTRL: Log_WriteData: ");
-  // Format_UnsDec(UART1_Write, (uint32_t)DataLen, 1);
-  // Format_String(UART1_Write, "B \n");
-  // xSemaphoreGive(UART1_Mutex);
+{ // xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
+  // Format_String(CONS_UART_Write, "TaskCTRL: Log_WriteData: ");
+  // Format_UnsDec(CONS_UART_Write, (uint32_t)DataLen, 1);
+  // Format_String(CONS_UART_Write, "B \n");
+  // xSemaphoreGive(CONS_Mutex);
   if(LogErr)                                                      // if last operation was in error
   { f_close(&LogFile);                                            // attempt to reopen the file system
     LogErr=f_mount(&FatFs, "", 0);                                // here it should quickly catch if the SD card is not there
     if(!LogErr) Log_Open();                                       // if file system OK, thne open the file
     else                                                          // if an error, report it
-    { // xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
-      // Format_String(UART1_Write, "TaskCTRL: cannot mount FAT filesystem\n"); // report mount error
-      // Format_String(UART1_Write, "\n");
-      // xSemaphoreGive(UART1_Mutex);
+    { // xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
+      // Format_String(CONS_UART_Write, "TaskCTRL: cannot mount FAT filesystem\n"); // report mount error
+      // Format_String(CONS_UART_Write, "\n");
+      // xSemaphoreGive(CONS_Mutex);
     }
   }
   if(LogErr) return;                                              // if still in error: quit
   UINT WrLen;
   LogErr=f_write(&LogFile, Data, DataLen, &WrLen);                // write the data to the log file
   if(!LogErr) return;
-  xSemaphoreTake(UART1_Mutex, portMAX_DELAY);                     // ask exclusivity on UART1
-  Format_String(UART1_Write, "TaskCTRL: error when writing to "); // report write error
-  Format_String(UART1_Write, LogName);
-  Format_String(UART1_Write, "\n");
-  xSemaphoreGive(UART1_Mutex);
+  xSemaphoreTake(CONS_Mutex, portMAX_DELAY);                     // ask exclusivity on UART1
+  Format_String(CONS_UART_Write, "TaskCTRL: error when writing to "); // report write error
+  Format_String(CONS_UART_Write, LogName);
+  Format_String(CONS_UART_Write, "\n");
+  xSemaphoreGive(CONS_Mutex);
 }
 
 // static void Log_WriteLine(const char *Line) { Log_Write(Line, strlen(Line)); }
@@ -272,19 +271,19 @@ void vTaskCTRL(void* pvParameters)
 
   vTaskDelay(5);
 
-  xSemaphoreTake(UART1_Mutex, portMAX_DELAY);                   // ask exclusivity on UART1
-  Format_String(UART1_Write, "TaskCTRL: MCU ID: ");
-  Format_Hex(UART1_Write, UniqueID[0]); UART1_Write(' ');
-  Format_Hex(UART1_Write, UniqueID[1]); UART1_Write(' ');
-  Format_Hex(UART1_Write, UniqueID[2]); UART1_Write(' ');
-  Format_UnsDec(UART1_Write, getFlashSize()); Format_String(UART1_Write, "kB\n");
+  xSemaphoreTake(CONS_Mutex, portMAX_DELAY);                   // ask exclusivity on UART1
+  Format_String(CONS_UART_Write, "TaskCTRL: MCU ID: ");
+  Format_Hex(CONS_UART_Write, UniqueID[0]); CONS_UART_Write(' ');
+  Format_Hex(CONS_UART_Write, UniqueID[1]); CONS_UART_Write(' ');
+  Format_Hex(CONS_UART_Write, UniqueID[2]); CONS_UART_Write(' ');
+  Format_UnsDec(CONS_UART_Write, getFlashSize()); Format_String(CONS_UART_Write, "kB\n");
 #ifdef WITH_SDLOG
   if(!LogErr)
-  { Format_String(UART1_Write, "SD card: ");
-    Format_UnsDec(UART1_Write, (uint32_t)FatFs.csize * (uint32_t)(FatFs.free_clust>>1), 4, 3 );
-    Format_String(UART1_Write, "MB free\n"); }
+  { Format_String(CONS_UART_Write, "SD card: ");
+    Format_UnsDec(CONS_UART_Write, (uint32_t)FatFs.csize * (uint32_t)(FatFs.free_clust>>1), 4, 3 );
+    Format_String(CONS_UART_Write, "MB free\n"); }
 #endif
-  xSemaphoreGive(UART1_Mutex);                                  // give back UART1 to other tasks
+  xSemaphoreGive(CONS_Mutex);                                  // give back UART1 to other tasks
   PrintParameters();
 
   // vTaskDelay(1000);  // give chance to the GPS to catch the date

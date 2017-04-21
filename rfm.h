@@ -68,9 +68,10 @@ class RFM_TRX
    uint8_t (*TransferByte)(uint8_t);  // exchange one byte through SPI
 #endif
    bool (*DIO0_isOn)(void);           // read DIO0 = packet is ready
-   bool (*DIO4_isOn)(void);
-   void (*RESET_On)(void);            // activate RF chip reset
-   void (*RESET_Off)(void);           // desactive RF chip reset
+   // bool (*DIO4_isOn)(void);
+   void (*RESET)(uint8_t On);         // activate or desactivate the RF chip reset
+   // void (*RESET_On)(void);            // activate RF chip reset
+   // void (*RESET_Off)(void);           // desactive RF chip reset
 
                                       // the following are in units of the synthesizer with 8 extra bits of precision
    uint32_t BaseFrequency;            // [32MHz/2^19/2^8] base frequency = channel #0
@@ -286,7 +287,7 @@ class RFM_TRX
    }
 
    void WriteTxPower(int8_t TxPower, uint8_t isHW) const
-   { WriteByte(  0x0C, REG_PARAMP); // Tx ramp up/down time = 20us (page 66)
+   { WriteByte(  0x09, REG_PARAMP); // Tx ramp up/down time = 40us (page 66)
      if(isHW) WriteTxPower_HW(TxPower);
          else WriteTxPower_W (TxPower);  }
 
@@ -295,29 +296,29 @@ class RFM_TRX
    int Configure(int16_t Channel, const uint8_t *Sync)
    { WriteMode(RF_OPMODE_STANDBY);          // mode = STDBY
      ClearIrqFlags();
-     WriteByte(  0x02, REG_DATAMODUL);     // Packet mode, FSK, BT=0.5
-     WriteWord(0x0140, REG_BITRATEMSB);    // bit rate = 100kbps
-     WriteWord(0x0333, REG_FDEVMSB);       // FSK deviation = +/-50kHz
-     setChannel(Channel);                    // operating channel
-     WriteSYNC(8, 7, Sync);                  // SYNC pattern (setup for reception)
-     WriteByte(  0x00, REG_PACKETCONFIG1); // Fixed size packet, no DC-free encoding, no CRC, no address filtering
-     WriteByte(0x80+51, REG_FIFOTHRESH);   // TxStartCondition=FifoNotEmpty, FIFO threshold = 51 bytes
-     WriteByte(  2*26, REG_PAYLOADLENGTH); // Packet size = 26 bytes Manchester encoded into 52 bytes
-     WriteByte(  0x02, REG_PACKETCONFIG2); // disable encryption (it is permanent between resets !), AutoRxRestartOn=1
-     WriteByte(  0x00, REG_AUTOMODES);
-     WriteTxPowerMin();                      // TxPower (setup for reception)
-     WriteByte(  0x88, REG_LNA);           // bit #7 = LNA input impedance: 0=50ohm or 1=200ohm ?
-     WriteByte( 2*114, REG_RSSITHRESH);    // RSSI threshold = -114dBm
-     WriteByte(  0x4A, REG_RXBW);          // +/-100kHz Rx bandwidth => p.27+67
-     WriteByte(  0x89, REG_AFCBW);         // +/-200kHz Rx bandwidth while AFC
-     WriteWord(0x4047, REG_DIOMAPPING1);   // DIO signals: DIO0=01, DIO4=01, ClkOut=OFF
-                                             // RX: DIO0 = PayloadReady, DIO4 = Rssi
-                                             // TX: DIO0 = TxReady,      DIO4 = TxReady
-     WriteByte(  0x2D, REG_TESTLNA);       // enable LNA, sensitivity up by 3dB ?
-     WriteByte(  0x20, REG_TESTDAGC);      // 0x20 when AfcLowBetaOn, 0x30 otherwise-> page 25
-     WriteByte(  0x00, REG_AFCFEI);        // AfcAutoOn=0, AfcAutoclearOn=0
-     WriteByte(  0x20, REG_AFCCTRL);       // AfcLowBetaOn=1 -> page 64 -> page 33
-     WriteByte(   +10, REG_TESTAFC);       // [488Hz] if AfcLowBetaOn
+     WriteByte(  0x02, REG_DATAMODUL);      // [0x00] Packet mode, FSK, 0x02: BT=0.5, 0x01: BT=1.0, 0x03: BT=0.3
+     WriteWord(0x0140, REG_BITRATEMSB);     // bit rate = 100kbps
+     WriteWord(0x0333, REG_FDEVMSB);        // FSK deviation = +/-50kHz
+     setChannel(Channel);                   // operating channel
+     WriteSYNC(8, 7, Sync);                 // SYNC pattern (setup for reception)
+     WriteByte(  0x00, REG_PACKETCONFIG1);  // [0x10] Fixed size packet, no DC-free encoding, no CRC, no address filtering
+     WriteByte(0x80+51, REG_FIFOTHRESH);    // [ ] TxStartCondition=FifoNotEmpty, FIFO threshold = 51 bytes
+     WriteByte(  2*26, REG_PAYLOADLENGTH);  // [0x40] Packet size = 26 bytes Manchester encoded into 52 bytes
+     WriteByte(  0x02, REG_PACKETCONFIG2);  // [0x02] disable encryption (it is permanent between resets !), AutoRxRestartOn=1
+     WriteByte(  0x00, REG_AUTOMODES);      // [0x00] all "none"
+     WriteTxPowerMin();                     // TxPower (setup for reception)
+     WriteByte(  0x08, REG_LNA);            // [0x08/88] bit #7 = LNA input impedance: 0=50ohm or 1=200ohm ?
+     WriteByte( 2*110, REG_RSSITHRESH);     // [0xE4] RSSI threshold = -110dBm
+     WriteByte(  0x42, REG_RXBW);           // [0x86/55] +/-125kHz Rx bandwidth => p.27+67 (A=100kHz, 2=125kHz, 9=200kHz, 1=250kHz)
+     WriteByte(  0x82, REG_AFCBW);          // [0x8A/8B] +/-125kHz Rx bandwidth while AFC
+     WriteWord(0x4047, REG_DIOMAPPING1);    // DIO signals: DIO0=01, DIO4=01, ClkOut=OFF
+                                            // RX: DIO0 = PayloadReady, DIO4 = Rssi
+                                            // TX: DIO0 = TxReady,      DIO4 = TxReady
+     WriteByte(  0x1B, REG_TESTLNA);        // [0x1B] 0x2D = LNA sensitivity up by 3dB, 0x1B = default
+     WriteByte(  0x30, REG_TESTDAGC);       // [0x30] 0x20 when AfcLowBetaOn, 0x30 otherwise-> page 25
+     WriteByte(  0x00, REG_AFCFEI);         // [0x00] AfcAutoOn=0, AfcAutoclearOn=0
+     WriteByte(  0x00, REG_AFCCTRL);        // [0x00] 0x20 = AfcLowBetaOn=1 -> page 64 -> page 33
+     WriteByte(   +10, REG_TESTAFC);        // [0x00] [488Hz] if AfcLowBetaOn
      return 0; }
 #endif
 

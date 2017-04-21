@@ -1,3 +1,6 @@
+#ifndef __FREQPLAN_H__
+#define __FREQPLAN_H__
+
 #include <stdint.h>
 
 class FreqPlan
@@ -17,6 +20,16 @@ class FreqPlan
      else             { BaseFreq=868200000; ChanSepar=200000; Channels= 2; } // Europe
    }
 
+   void setPlan(int32_t Latitude, int32_t Longitude)
+   { setPlan(calcPlan(Latitude, Longitude)); }
+
+   const char *getPlanName(void) { return getPlanName(Plan); }
+
+   static const char *getPlanName(uint8_t Plan)
+   { static const char *Name[5] = { "Default", "Europe/Africa", "USA/Canada", "Australia/South America", "New Zeeland" } ;
+     if(Plan>4) return 0;
+     return Name[Plan]; }
+
    uint8_t getChannel  (uint32_t Time, uint8_t Slot=0, uint8_t OGN=1) const // OGN-tracker or FLARM, UTC time, slot: 0 or 1
    { if(Channels<=1) return 0;                                         // if single channel (New Zeeland)
      if(Plan>=2)                                                       // Hopping plans
@@ -28,8 +41,17 @@ class FreqPlan
        return Channel; }                                               // return 0..Channels-1 for USA/CA or Australia.
      return Slot^OGN; }                                                // return 0 or 1 for EU freq. plan
 
+   uint32_t getChanFrequency(int Channel) const { return BaseFreq+ChanSepar*Channel; }
+
    uint32_t getFrequency(uint32_t Time, uint8_t Slot=0, uint8_t OGN=1) const
    { uint8_t Channel=getChannel(Time, Slot, OGN); return BaseFreq+ChanSepar*Channel; } // return frequency [Hz] for given UTC time and slot
+
+   uint8_t static calcPlan(int32_t Latitude, int32_t Longitude) // get the frequency plan from Lat/Lon: 1 = Europe + Africa, 2 = USA/CAnada, 3 = Australia + South America, 4$
+   { if( (Longitude>=(-20*600000)) && (Longitude<=(60*600000)) ) return 1; // between -20 and 60 deg Lat => Europe + Africa: 868MHz band
+     if( Latitude<(20*600000) )                                            // below 20deg latitude
+     { if( ( Longitude>(164*600000)) && (Latitude<(-30*600000)) && (Latitude>(-48*600000)) ) return 4;  // => New Zeeland
+       return 3; }                                                         // => Australia + South America: upper half of 915MHz band
+     return 2; }                                                           // => USA/Canada: full 915MHz band
 
   private:
    static uint32_t FreqHopHash(uint32_t Time)
@@ -41,3 +63,5 @@ class FreqPlan
      return Time ^ (Time>>16); }
 
 } ;
+
+#endif // __FREQPLAN_H__

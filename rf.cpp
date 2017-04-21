@@ -41,24 +41,65 @@
 
 // function to control and read status of the RF chip
 
+#ifdef WITH_OGN_CUBE_1 // OGN-CUBE-1
+
+// PB0: RF chip RESET: active HIGH
 #ifdef SPEEDUP_STM_LIB
-inline void RFM_RESET_On  (void) { GPIOB->BSRR = GPIO_Pin_5; }
-inline void RFM_RESET_Off (void) { GPIOB->BRR  = GPIO_Pin_5; }
+inline void RFM_RESET_High  (void) { GPIOB->BSRR = GPIO_Pin_1; }
+inline void RFM_RESET_Low   (void) { GPIOB->BRR  = GPIO_Pin_1; }
 #else
-inline void RFM_RESET_On  (void) { GPIO_SetBits  (GPIOB, GPIO_Pin_5); }
-inline void RFM_RESET_Off (void) { GPIO_ResetBits(GPIOB, GPIO_Pin_5); }
+inline void RFM_RESET_High  (void) { GPIO_SetBits  (GPIOB, GPIO_Pin_1); }
+inline void RFM_RESET_Low   (void) { GPIO_ResetBits(GPIOB, GPIO_Pin_1); }
 #endif
 
-static void RFM_RESET(uint8_t On)
-{ if(On) RFM_RESET_On();
-    else RFM_RESET_Off(); }
+// PB1: RF chip SELECT: active LOW
+#ifdef SPEEDUP_STM_LIB
+inline void RFM_Select  (void) { GPIOB->BRR  = GPIO_Pin_0; }
+inline void RFM_Deselect(void) { GPIOB->BSRR = GPIO_Pin_0; }
+#else
+inline void RFM_Select  (void) { GPIO_WriteBit(GPIOB, GPIO_Pin_0, Bit_RESET); }
+inline void RFM_Deselect(void) { GPIO_WriteBit(GPIOB, GPIO_Pin_0, Bit_SET  ); }
+#endif
 
+// PB2: RF chip IRQ: active HIGH
+#ifdef SPEEDUP_STM_LIB
+inline bool RFM_DIO0_isOn(void)   { return (GPIOB->IDR & GPIO_Pin_2) != 0; }
+#else
+inline bool RFM_DIO0_isOn(void)   { return GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_2) != Bit_RESET; }
+#endif
+
+#else // classical DIY-Tracker
+
+// RF chip RESET: active HIGH for RFM69 and LOW for RFM95
+#ifdef SPEEDUP_STM_LIB
+inline void RFM_RESET_High  (void) { GPIOB->BSRR = GPIO_Pin_5; }
+inline void RFM_RESET_Low   (void) { GPIOB->BRR  = GPIO_Pin_5; }
+#else
+inline void RFM_RESET_High  (void) { GPIO_SetBits  (GPIOB, GPIO_Pin_5); }
+inline void RFM_RESET_Low   (void) { GPIO_ResetBits(GPIOB, GPIO_Pin_5); }
+#endif
+
+// PB2: RF chip IRQ: active HIGH
 #ifdef SPEEDUP_STM_LIB
 inline bool RFM_DIO0_isOn(void)   { return (GPIOB->IDR & GPIO_Pin_4) != 0; }
-inline bool RFM_DIO4_isOn(void)   { return (GPIOB->IDR & GPIO_Pin_3) != 0; }
+// inline bool RFM_DIO4_isOn(void)   { return (GPIOB->IDR & GPIO_Pin_3) != 0; }
 #else
 inline bool RFM_DIO0_isOn(void)   { return GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_4) != Bit_RESET; }
-inline bool RFM_DIO4_isOn(void)   { return GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_3) != Bit_RESET; }
+// inline bool RFM_DIO4_isOn(void)   { return GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_3) != Bit_RESET; }
+#endif
+
+#endif
+
+#ifdef WITH_RFM95 // RESET is active LOW
+static void RFM_RESET(uint8_t On)
+{ if(On) RFM_RESET_Low();
+    else RFM_RESET_High(); }
+#endif
+
+#ifdef WITH_RFM69 // RESET is active HIGH
+static void RFM_RESET(uint8_t On)
+{ if(On) RFM_RESET_High();
+    else RFM_RESET_Low(); }
 #endif
 
 void RFM_GPIO_Configuration(void)
@@ -66,16 +107,36 @@ void RFM_GPIO_Configuration(void)
 
   RCC_APB2PeriphClockCmd (RCC_APB2Periph_GPIOB /* | RCC_APB2Periph_AFIO */, ENABLE);
 
-  GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_3 | GPIO_Pin_4;    // PB4 = DIO0 and PB3 = DIO4 of RFM69
+#ifdef WITH_OGN_CUBE_1
+  GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_2;                        // PB2 = DIO0 RFM69/95
   GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_IN_FLOATING;
   // GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_IPU;
   GPIO_Init(GPIOB, &GPIO_InitStructure);
 
-  GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_5;                // PB5 = RESET (active high)
+  GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_0 | GPIO_Pin_1;            // PB1 = RESET, PB0 = SS
+  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+  GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_Out_PP;
+  GPIO_Init(GPIOB, &GPIO_InitStructure);
+#else
+  GPIO_InitStructure.GPIO_Pin   = /* GPIO_Pin_3 | */ GPIO_Pin_4;      // PB4 = DIO0 and PB3 = DIO4 of RFM69
+  GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_IN_FLOATING;
+  // GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_IPU;
+  GPIO_Init(GPIOB, &GPIO_InitStructure);
+
+  GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_5;                         // PB5 = RESET
   GPIO_InitStructure.GPIO_Speed = GPIO_Speed_2MHz;
   GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_Out_PP;
   GPIO_Init(GPIOB, &GPIO_InitStructure);
+#endif
 }
+
+// RF chip interface for OGN-CUBE-1:
+// RF.SS    <- PB 0
+// RF.RESET <- PB 1
+// RF.DIO0  -> PB 2
+// RF.SCK   <- PA 5 SPI1.SCK
+// RF.MISO  -> PA 6 SPI1.MISO
+// RF.MOSI  <- PA 7 SPI1.MOSI
 
 // ==================================================================
 
@@ -132,31 +193,31 @@ static void SetRxChannel(uint8_t RxChan=RX_Channel)
   TRX.WriteSYNC(7, 7, OGN_SYNC); }   // Full SYNC for TX
 
 static void PrintPktData(void)
-{ xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
+{ xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
   // uint8_t ManchErr = Count1s(RxPktErr, 26);
-  Format_String(UART1_Write, "Pkt ");
-  Format_Hex(UART1_Write, RX_UnixTime);
-  // UART1_Write(' '); Format_Hex(UART1_Write, RxRSSI);
-  UART1_Write(' '); Format_Hex(UART1_Write, RX_Channel);
-  UART1_Write('\r'); UART1_Write('\n');
+  Format_String(CONS_UART_Write, "Pkt ");
+  Format_Hex(CONS_UART_Write, RX_UnixTime);
+  // CONS_UART_Write(' '); Format_Hex(CONS_UART_Write, RxRSSI);
+  CONS_UART_Write(' '); Format_Hex(CONS_UART_Write, RX_Channel);
+  CONS_UART_Write('\r'); CONS_UART_Write('\n');
   for(uint8_t Idx=0; Idx<26; Idx++)
-  { UART1_Write(' '); Format_Hex(UART1_Write, RxPktData[Idx]); }
-  UART1_Write('\r'); UART1_Write('\n');
+  { CONS_UART_Write(' '); Format_Hex(CONS_UART_Write, RxPktData[Idx]); }
+  CONS_UART_Write('\r'); CONS_UART_Write('\n');
   for(uint8_t Idx=0; Idx<26; Idx++)
-  { UART1_Write(' '); Format_Hex(UART1_Write, RxPktErr[Idx]); }
-  UART1_Write('\r'); UART1_Write('\n');
-  xSemaphoreGive(UART1_Mutex);
+  { CONS_UART_Write(' '); Format_Hex(CONS_UART_Write, RxPktErr[Idx]); }
+  CONS_UART_Write('\r'); CONS_UART_Write('\n');
+  xSemaphoreGive(CONS_Mutex);
 }
 
 static void PrintRelayQueue(uint8_t Idx)                    // for debug
 { uint8_t Len=0;
   // Len+=Format_String(Line+Len, "");
-  xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
-  // Format_String(UART1_Write, Line, Len);
+  xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
+  // Format_String(CONS_UART_Write, Line, Len);
   Line[Len++]='['; Len+=Format_Hex(Line+Len, Idx); Line[Len++]=']'; Line[Len++]=' ';
   Len+=RelayQueue.Print(Line+Len);
-  Format_String(UART1_Write, Line);
-  xSemaphoreGive(UART1_Mutex);
+  Format_String(CONS_UART_Write, Line);
+  xSemaphoreGive(CONS_Mutex);
 }
 
 static uint8_t ReceivePacket(void)                           // see if a packet has arrived
@@ -206,30 +267,33 @@ static uint8_t ReceivePacket(void)                           // see if a packet 
 
     // taskYIELD();
     if( (Check==0) && (RxPacket->RxErr<16) )                     // what limit on number of detected bit errors ?
-    {
+    { int32_t LatDist, LonDist;
       if( RxPacket->Packet.isOther() || RxPacket->Packet.isEncrypted() ) // non-position packet: ignore
       { }
       else                                                       // de-whiten
       { uint8_t MyOwnPacket = ( RxPacket->Packet.getAddress() == Parameters.getAddress() ) && ( RxPacket->Packet.getAddrType() == Parameters.getAddrType() );
         RxPacket->Packet.Dewhiten();
-        if(!MyOwnPacket)
-        { RxPacket->calcRelayRank(GPS_Altitude/10);              // calculate the relay-rank (priority for relay)
-          RelayQueue.addNew(RxPacketIdx); }
-        uint8_t Len=RxPacket->WritePOGNT(Line);                  // print on the console as $POGNT
-        if(!MyOwnPacket)
-        { xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
-          Format_String(UART1_Write, Line, Len);
-          xSemaphoreGive(UART1_Mutex); }
+        bool DistOK = RxPacket->Packet.calcDistanceVector(LatDist, LonDist, GPS_Latitude, GPS_Longitude, GPS_LatCosine)>=0;
+        if(DistOK)
+        { if(!MyOwnPacket)
+          { RxPacket->calcRelayRank(GPS_Altitude/10);              // calculate the relay-rank (priority for relay)
+            RelayQueue.addNew(RxPacketIdx); }
+          uint8_t Len=RxPacket->WritePOGNT(Line);                  // print on the console as $POGNT
+          if(!MyOwnPacket)
+          { xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
+            Format_String(CONS_UART_Write, Line, Len);
+            xSemaphoreGive(CONS_Mutex); }
 #ifdef WITH_SDLOG
-        xSemaphoreTake(Log_Mutex, portMAX_DELAY);
-        Format_String(Log_Write, Line, Len);
-        xSemaphoreGive(Log_Mutex);
+          xSemaphoreTake(Log_Mutex, portMAX_DELAY);
+          Format_String(Log_Write, Line, Len);
+          xSemaphoreGive(Log_Mutex);
 #endif
-        if(!MyOwnPacket)
-        { Len=RxPacket->WritePFLAA(Line, GPS_Latitude, GPS_Longitude, GPS_Altitude/10, GPS_LatCosine); // print on the console as $PFLAA
-          xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
-          Format_String(UART1_Write, Line, Len);
-          xSemaphoreGive(UART1_Mutex); }
+          if(!MyOwnPacket)
+          { Len=RxPacket->Packet.WritePFLAA(Line, LatDist, LonDist, RxPacket->Packet.DecodeAltitude()-GPS_Altitude/10); // print on the console as $PFLAA
+            xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
+            Format_String(CONS_UART_Write, Line, Len);
+            xSemaphoreGive(CONS_Mutex); }
+        }
       }
     }
   }
@@ -237,9 +301,9 @@ static uint8_t ReceivePacket(void)                           // see if a packet 
   // TRX.WriteMode(RFM69_OPMODE_RX);                            // back to receive (but we already have AutoRxRestart)
 /*
   ExecTime=xTaskGetTickCount()-ExecTime;
-  xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
-  Format_String(UART1_Write, "ReceivePacket: "); Format_UnsDec(UART1_Write, ExecTime); UART1_Write('\r'); UART1_Write('\n');
-  xSemaphoreGive(UART1_Mutex);
+  xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
+  Format_String(CONS_UART_Write, "ReceivePacket: "); Format_UnsDec(CONS_UART_Write, ExecTime); CONS_UART_Write('\r'); CONS_UART_Write('\n');
+  xSemaphoreGive(CONS_Mutex);
 */
   return 1; }                                                    // return: 1 packet we have received
 
@@ -339,21 +403,13 @@ static void SetFreqPlan(void)
 
 static uint8_t StartRFchip(void)
 {
-#ifdef WITH_RFM95
-  TRX.RESET_Off();
+  TRX.RESET(1);
   vTaskDelay(10);
-  TRX.RESET_On();
+  TRX.RESET(0);
   vTaskDelay(10);
-#endif
-#ifdef WITH_RFM69
-  TRX.RESET_On();
-  vTaskDelay(10);
-  TRX.RESET_Off();
-  vTaskDelay(10);
-#endif
   SetFreqPlan();
-  TRX.Configure(0, OGN_SYNC);                                // setup RF chip parameters and set to channel #0
   TRX.WriteMode(RF_OPMODE_STANDBY);                          // set RF chip mode to STANDBY
+  TRX.Configure(0, OGN_SYNC);                                // setup RF chip parameters and set to channel #0
   return TRX.ReadVersion(); }                                // read the RF chip version and return it
 
 // ---------------------------------------------------------------------------------------------------------------------------------------
@@ -379,13 +435,16 @@ static void GetRelayPacket(void)                                 // prepare a pa
 void vTaskRF(void* pvParameters)
 {
                                           // set interface for the RF chip
-  TRX.Select       = SPI1_Select;         //
+#ifdef WITH_OGN_CUBE_1                    // for OGN-CUBE-1
+  TRX.Select       = RFM_Select;          // separate SS
+  TRX.Deselect     = RFM_Deselect;
+#else                                     // for DIY-Tracker
+  TRX.Select       = SPI1_Select;         // standard SS of the SPI1
   TRX.Deselect     = SPI1_Deselect;
+#endif
   TRX.TransferByte = SPI1_TransferByte;
   TRX.DIO0_isOn    = RFM_DIO0_isOn;
-  TRX.DIO4_isOn    = RFM_DIO4_isOn;
-  TRX.RESET_On     = RFM_RESET_On;
-  TRX.RESET_Off    = RFM_RESET_Off;
+  TRX.RESET        = RFM_RESET;
 
   RF_FreqPlan.setPlan(0);                  // 1 = Europe/Africa, 2 = USA/CA, 3 = Australia and South America
 
@@ -404,11 +463,11 @@ void vTaskRF(void* pvParameters)
   for( ; ; )
   { uint8_t ChipVersion = StartRFchip();
 
-    xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
-    Format_String(UART1_Write, "TaskRF: ");
-    UART1_Write('v'); Format_Hex(UART1_Write, ChipVersion);
-    UART1_Write('\r'); UART1_Write('\n');
-    xSemaphoreGive(UART1_Mutex);
+    xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
+    Format_String(CONS_UART_Write, "TaskRF: ");
+    CONS_UART_Write('v'); Format_Hex(CONS_UART_Write, ChipVersion);
+    CONS_UART_Write('\r'); CONS_UART_Write('\n');
+    xSemaphoreGive(CONS_Mutex);
 
     if( (ChipVersion!=0x00) && (ChipVersion!=0xFF) ) break;
     vTaskDelay(1000);
@@ -435,7 +494,7 @@ void vTaskRF(void* pvParameters)
     TimeSinceNoPos++; if(TimeSinceNoPos==0) TimeSinceNoPos--;
     if(GPS_TimeSinceLock>2)                                                    // if GPS lock is already there for more than 2 seconds
     { GPS_Position *Position = GPS_getPosition();                              // get the most recent valid GPS position
-      RF_FreqPlan.setPlan(Position->getFreqPlan());                            // set the frequency plan according to the GPS position
+      RF_FreqPlan.setPlan(Position->Latitude, Position->Longitude);            // set the frequency plan according to the GPS position
       if(Position && Position->isComplete() && Position->isValid() )           // position must be complete and valid
       { int8_t Sec=Position->Sec;
         Sec-=2; if(Sec<0) Sec+=60;
@@ -535,11 +594,11 @@ void vTaskRF(void* pvParameters)
       Len+=Format_UnsDec(Line+Len, (uint16_t)TX_Credit);
       Len+=NMEA_AppendCheckCRNL(Line, Len);                                    // append NMEA check-sum and CR+NL
       // LogLine(Line);
-      xSemaphoreTake(UART1_Mutex, portMAX_DELAY);
-      Format_String(UART1_Write, Line, Len);                                   // send the NMEA out to the console
+      xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
+      Format_String(CONS_UART_Write, Line, Len);                                   // send the NMEA out to the console
       // RelayQueue.Print(Line);
-      // Format_String(UART1_Write, Line);
-      xSemaphoreGive(UART1_Mutex);
+      // Format_String(CONS_UART_Write, Line);
+      xSemaphoreGive(CONS_Mutex);
 #ifdef WITH_SDLOG
       xSemaphoreTake(Log_Mutex, portMAX_DELAY);
       Format_String(Log_Write, Line, Len);                                     // send the NMEA out to the log file

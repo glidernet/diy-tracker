@@ -9,23 +9,23 @@
 #include "stm32f10x_gpio.h"
 #include "stm32f10x_i2c.h"
 
-void I2C1_Reset(void)
-{ I2C_SoftwareResetCmd(I2C1,ENABLE);
+void I2C_Reset(I2C_TypeDef* I2Cx)
+{ I2C_SoftwareResetCmd(I2Cx ,ENABLE);
   vTaskDelay(1);
-  I2C_SoftwareResetCmd(I2C1,DISABLE);
-  // I2C_DeInit(I2C1);
-  // I2C_Cmd(I2C1, ENABLE);
+  I2C_SoftwareResetCmd(I2Cx, DISABLE);
+  // I2C_DeInit(I2Cx);
+  // I2C_Cmd(I2Cx, ENABLE);
 }
 
-void I2C1_Restart(uint32_t ClockSpeed)
-{ 
+void I2C_Restart(I2C_TypeDef* I2Cx, uint32_t ClockSpeed)
+{
   I2C_InitTypeDef I2C_InitStructure;
 
-  // I2C_SoftwareResetCmd(I2C1,ENABLE);
-  // I2C_SoftwareResetCmd(I2C1,DISABLE);
-  // I2C_Cmd(I2C1, DISABLE);
+  // I2C_SoftwareResetCmd(I2Cx, ENABLE);
+  // I2C_SoftwareResetCmd(I2Cx, DISABLE);
+  // I2C_Cmd(I2Cx, DISABLE);
 
-  I2C_DeInit( I2C1 );                                      //
+  I2C_DeInit( I2Cx );                                      //
 
   I2C_InitStructure.I2C_Mode                = I2C_Mode_I2C;
   I2C_InitStructure.I2C_ClockSpeed          = ClockSpeed;
@@ -34,25 +34,35 @@ void I2C1_Restart(uint32_t ClockSpeed)
   I2C_InitStructure.I2C_Ack                 = I2C_Ack_Enable;
   I2C_InitStructure.I2C_AcknowledgedAddress = I2C_AcknowledgedAddress_7bit;
 
-  I2C_Cmd(I2C1, ENABLE);
-  I2C_Init(I2C1, &I2C_InitStructure);
-  // I2C_AcknowledgeConfig(I2C1, ENABLE); // ?
+  I2C_Cmd(I2Cx, ENABLE);
+  I2C_Init(I2Cx, &I2C_InitStructure);
+  // I2C_AcknowledgeConfig(I2Cx, ENABLE); // ?
 
 }
 
-void I2C1_Configuration(uint32_t ClockSpeed) // initialize I2C #1 interface and set it to given speed
+void I2C_Configuration(I2C_TypeDef* I2Cx, uint32_t ClockSpeed) // initialize I2C #1 interface and set it to given speed
 {
   GPIO_InitTypeDef  GPIO_InitStructure;
 
   RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);    // enable clock for GPIO port B
-  RCC_APB1PeriphClockCmd(RCC_APB1Periph_I2C1 , ENABLE );   // enable the clock for I2C1
+  if(I2Cx == I2C1)
+  { RCC_APB1PeriphClockCmd(RCC_APB1Periph_I2C1 , ENABLE );   // enable the clock for I2C1
 
-  GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_6 | GPIO_Pin_7; // I2C #1 runs on GPIO pins 6/7
-  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;        // 2MHz ?
-  GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_AF_OD;         // open-drain, but can't make pull-ups
-  GPIO_Init(GPIOB, &GPIO_InitStructure);                   // setup port B
+    GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_6 | GPIO_Pin_7; // I2C #1 runs on GPIO pins 6/7
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;        // 2MHz ?
+    GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_AF_OD;         // open-drain, but can't make pull-ups
+    GPIO_Init(GPIOB, &GPIO_InitStructure);                   // setup port B
+  }
+  else if(I2Cx == I2C2)
+  { RCC_APB1PeriphClockCmd(RCC_APB1Periph_I2C2 , ENABLE );   // enable the clock for I2C1
 
-  I2C1_Restart(ClockSpeed); }
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_10 | GPIO_Pin_11; // I2C #1 runs on GPIO pins 6/7
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;        // 2MHz ?
+    GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_AF_OD;         // open-drain, but can't make pull-ups
+    GPIO_Init(GPIOB, &GPIO_InitStructure);                   // setup port B
+  }
+
+  I2C_Restart(I2Cx, ClockSpeed); }
 
 // #define I2C_IdleWait taskYIELD()
 static const uint16_t I2C_BusyTimeout  = 200;  // timeout to wait when busy

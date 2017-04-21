@@ -57,7 +57,7 @@ int32_t IntSine(uint32_t Angle)
   // printf(" [%04X %+11.8f %+11.8f] ",  -Frac2, (double)Deriv2/(uint32_t)0x80000000, (double)Corr/(uint32_t)0x80000000);
   return Value; }
 
-// lett precise sine for 16-bit angles
+// Less precise sine for 16-bit angles
 // source: http://www.coranac.com/2009/07/sines/
 /// A sine approximation via a fourth-order cosine approx.
 /// @param x   angle (with 2^16 units/circle)

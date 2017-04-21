@@ -20,7 +20,7 @@
 
 #include "format.h"
 
-#define USE_BIT_FIELDS
+// class GPS_Position;
 
 /*
 class OGN_SlowPacket       // "slow packet" for transmitting position encoded in packet transmission times
@@ -95,13 +95,12 @@ class OGN_Packet           // Packet structure for the OGN tracker
                            // 0: NNNN NNNN NNNN NNNN NNNN NNNN NNNN NNNN  Name: 9 char x 7bit or 10 x 6bit or Huffman encoding ?
                            // 1: NNNN NNNN NNNN NNNN NNNN NNNN NNNN NNNN
    struct
-   {   signed int    Latitude:24; //                  // QQTT TTTT LLLL LLLL LLLL LLLL LLLL LLLL  QQ=fix Quality:2, TTTTTT=time:6, LL..=Latitude:20
-     unsigned int        Time: 6; // [sec]
+   {   signed int    Latitude:24; //                  // QQTT TTTT LLLL LLLL LLLL LLLL LLLL LLLL  QQ=fix Quality:2, TTTTTT=time:6, LL..=Latitude:24
+     unsigned int        Time: 6; // [sec]            // time, just second thus ambiguity every every minute
      unsigned int  FixQuality: 2; //
-       signed int   Longitude:24; //                  // MBDD DDDD LLLL LLLL LLLL LLLL LLLL LLLL  F=fixMode:1 B=isBaro:1, DDDDDD=DOP:6, LL..=Longitude:20
-     unsigned int         DOP: 6;
-     // unsigned int     hasBaro: 1;
-     unsigned int     BaroMSB: 1;
+       signed int   Longitude:24; //                  // MBDD DDDD LLLL LLLL LLLL LLLL LLLL LLLL  F=fixMode:1 B=isBaro:1, DDDDDD=DOP:6, LL..=Longitude:24
+     unsigned int         DOP: 6; //                  // GPS Dilution of Precision
+     unsigned int     BaroMSB: 1; //                  // negated bit #8 of the altitude difference between baro and GPS
      unsigned int     FixMode: 1; //
      unsigned int    Altitude:14; // [m] VR           // RRRR RRRR SSSS SSSS SSAA AAAA AAAA AAAA  RR..=turn Rate:8, SS..=Speed:10, AA..=Alt:14
      unsigned int       Speed:10; // [0.1m/s] VR
@@ -109,27 +108,45 @@ class OGN_Packet           // Packet structure for the OGN tracker
      unsigned int     Heading:10; //                  // BBBB BBBB YYYY PCCC CCCC CCDD DDDD DDDD  BB..=Baro altitude:8, YYYY=AcftType:4, P=Stealth:1, CC..=Climb:9, DD..=Heading:10
      unsigned int   ClimbRate: 9; // [0.1m/s] VR
      unsigned int     Stealth: 1;
-     unsigned int    AcftType: 4;
-     unsigned int BaroAltDiff: 8; // [m]
+     unsigned int    AcftType: 4; // [0..15]          // type of aircraft: 1 = glider, 2 = towplane, 3 = helicopter, ...
+     unsigned int BaroAltDiff: 8; // [m]              // lower 8 bits of the altitude difference between baro and GPS
    } Position;
 
    struct
-   { unsigned int Pulse     : 8; // [bpm]               // QQTT TTTT UUUU UUUU UOOO OOOO PPPP PPPP  TT.. = time
-     unsigned int Oxygen    : 7; // [%]
-     unsigned int Unused1   : 1;
-     unsigned int Turbulence: 8;
+   {   signed int    Latitude:24; //                  // Latitude
+     unsigned int        Time: 6; // [sec]            // time, just second thus ambiguity every every minute
+     unsigned int            : 2; //
+       signed int   Longitude:24; //                  // Longitude
+     unsigned int            : 6; //                  //
+     unsigned int     BaroMSB: 1; //                  // negated bit #8 of the altitude difference between baro and GPS
+     unsigned int            : 1; //
+     unsigned int    Altitude:14; // [m] VR           // RRRR RRRR SSSS SSSS SSAA AAAA AAAA AAAA  RR..=turn Rate:8, SS..=Speed:10, AA..=Alt:14
+     unsigned int       Speed:10; // [0.1m/s] VR
+     unsigned int            : 8; //
+     unsigned int     Heading:10; //                  // BBBB BBBB YYYY PCCC CCCC CCDD DDDD DDDD  BB..=Baro altitude:8, YYYY=AcftType:4, P=Stealth:1, CC..=Climb:9, DD..=Heading:10
+     unsigned int   ClimbRate: 9; // [0.1m/s] VR
+     unsigned int            : 1;
+     unsigned int  ReportType: 4; //                  // 1 for wind/thermal report
+     unsigned int BaroAltDiff: 8; // [m]              // lower 8 bits of the altitude difference between baro and GPS
+   } Wind;
+
+   struct
+   { unsigned int Pulse     : 8; // [bpm]               // pilot: heart pulse rate
+     unsigned int Oxygen    : 7; // [%]                 // pilot: oxygen level in the blood
+     unsigned int           : 1;
+     unsigned int PacketRate: 8;
      unsigned int Time      : 6; // [sec]
-     unsigned int FixQuality: 2;
-     unsigned int AudioNoise: 8; // [dB]                // HHHH HHHT TTTT TTTT NNNN NNSS SSSS SSSS  SS..=slot time, TT..=temperature, HH..=humidity
-     unsigned int RadioNoise: 8; // [dBm]
-     unsigned int Temperature:9; // [0.1degC] VR
-     unsigned int Humidity  : 7; // [%]
-     unsigned int Altitude  :15; // [m] VR              // BBBB BBBB BBBB BBBB BAAA AAAA AAAA AAAA  Baro pressure[0.5Pa], GPS altitude
-     unsigned int Pressure  :17; // [Pa]
-     unsigned int Firmware  : 8; // [ ]                 // FFFF FFFF YYYY HHHH HHHH XXXX VVVV VVVV  FF..=firmware version, YYYY = report type, TT..=Temperatature, XX..=TxPower, VV..=battery voltage
-     unsigned int Hardware  : 8; // [ ]
-     unsigned int TxPower   : 4; // [dBm]
-     unsigned int ReportType: 4; // [ ] device, pilot, ...
+     unsigned int FixQuality: 2; 
+     unsigned int AudioNoise: 8; // [dB]                // 
+     unsigned int RadioNoise: 8; // [dBm]               // noise seen by the RF chip
+     unsigned int Temperature:9; // [0.1degC] VR        // temperature by the baro or RF chip
+     unsigned int Humidity  : 7; // [%]                 // humidity
+     unsigned int Altitude  :15; // [m] VR              // GPS altitude
+     unsigned int Pressure  :17; // [Pa]                // barometric pressure
+     unsigned int Firmware  : 8; // [ ]                 // firmware version
+     unsigned int Hardware  : 8; // [ ]                 // hardware version
+     unsigned int TxPower   : 4; // [dBm]               // RF trancmitter power
+     unsigned int ReportType: 4; // [ ]                 // 0 for the status report
      unsigned int Voltage   : 8; // [0.1V] VR
    } Status;
 
@@ -163,7 +180,7 @@ class OGN_Packet           // Packet structure for the OGN tracker
      printf(" %d/%dD/%4.1f", (int)getFixQuality(), (int)getFixMode()+2, 0.1*(10+DecodeDOP()) );
      if(getTime()<60) printf(" %02ds:", (int)getTime());
                  else printf(" ---:");
-     printf(" [%+10.6f, %+10.6f]deg %ldm",
+     printf(" [%+10.6f, %+11.6f]deg %ldm",
             0.0001/60*DecodeLatitude(), 0.0001/60*DecodeLongitude(), (long int)DecodeAltitude() );
      if(hasBaro())
      { printf("[%+dm]", (int)getBaroAltDiff() ); }
@@ -172,7 +189,172 @@ class OGN_Packet           // Packet structure for the OGN tracker
      printf("\n");
    }
 
+   int8_t ReadAPRS(const char *Msg)
+   { Clear();
+
+     const char *Data  = strchr(Msg, ':'); if(Data==0) return -1;
+     Data++;
+     const char *Dest  = strchr(Msg, '>'); if(Dest==0) return -1;
+     Dest++;
+     const char *Comma = strchr(Dest, ',');
+
+     setAcftType(0xF);
+
+     uint8_t AddrType;
+     uint32_t Address;
+          if(memcmp(Msg, "RND", 3)==0) AddrType=0;
+     else if(memcmp(Msg, "ICA", 3)==0) AddrType=1;
+     else if(memcmp(Msg, "FLR", 3)==0) AddrType=2;
+     else if(memcmp(Msg, "OGN", 3)==0) AddrType=3;
+     else AddrType=4;
+     if(AddrType<4)
+     { if(Read_Hex(Address, Msg+3)==6) setAddress(Address);
+       setAddrType(AddrType); }
+
+     // const char *Relay = strstr(Dest, ",RELAY*");
+     // if(Relay && (Relay<Data) ) setRelayCount(1);
+     if(Comma) { if(memcmp(Comma+1, "RELAY*" , 6)==0) setRelayCount(1); }
+
+     if(Data[0]!='/') return -1;
+     if(Data[7]!='h') return -1;
+     int8_t Time=Read_Dec2(Data+5); if(Time<0) return -1;
+     setTime(Time);
+     Data+=8;
+
+     setFixMode(1);
+     setFixQuality(1);
+     EncodeDOP(0xFF);
+
+     int8_t LatDeg  = Read_Dec2(Data);   if(LatDeg<0) return -1;
+     int8_t LatMin  = Read_Dec2(Data+2); if(LatMin<0) return -1;
+     if(Data[4]!='.') return -1;
+     int8_t LatFrac = Read_Dec2(Data+5); if(LatFrac<0) return -1;
+     int32_t Latitude = (int32_t)LatDeg*600000 + (int32_t)LatMin*10000 + (int32_t)LatFrac*100;
+     char LatSign = Data[7];
+     Data+=8+1;
+
+     int16_t LonDeg  = Read_Dec3(Data);   if(LonDeg<0) return -1;
+     int8_t  LonMin  = Read_Dec2(Data+3); if(LonMin<0) return -1;
+     if(Data[5]!='.') return -1;
+     int8_t LonFrac = Read_Dec2(Data+6); if(LonFrac<0) return -1;
+     int32_t Longitude = (int32_t)LonDeg*600000 + (int32_t)LonMin*10000 + (int32_t)LonFrac*100;
+     char LonSign = Data[8];
+     Data+=9+1;
+
+     int16_t Speed=0;
+     int16_t Heading=0;
+     if(Data[3]=='/')
+     { Heading=Read_Dec3(Data);
+       Speed=Read_Dec3(Data+4);
+       Data+=7; }
+     EncodeHeading(Heading*10);
+     EncodeSpeed(((int32_t)Speed*337146+0x8000)>>16);
+
+     uint32_t Altitude=0;
+     if( (Data[0]=='/') && (Data[1]=='A') && (Data[2]=='=') && (Read_UnsDec(Altitude, Data+3)==6) )
+     { Altitude = (3*Altitude+5)/10;
+       Data+=9; }
+     EncodeAltitude(Altitude);
+
+     for( ; ; )
+     { if(Data[0]!=' ') break;
+       Data++;
+
+       if( (Data[0]=='!') && (Data[1]=='W') && (Data[4]=='!') )
+       { Latitude  += (Data[2]-'0')*10;
+         Longitude += (Data[3]-'0')*10;
+         Data+=5; continue; }
+
+       if( (Data[0]=='i') && (Data[1]=='d') )
+       { uint32_t ID; Read_Hex(ID, Data+2);
+         setAddress(ID&0x00FFFFFF);
+         setAddrType((ID>>24)&0x03);
+         setAcftType((ID>>26)&0x0F);
+         setStealth(ID>>31);
+         Data+=10; continue; }
+
+       if( (Data[0]=='F') && (Data[1]=='L') && (Data[5]=='.') )
+       { int16_t FLdec=Read_Dec3(Data+2);
+         int16_t FLfrac=Read_Dec2(Data+6);
+         if( (FLdec>=0) && (FLfrac>=0) )
+         { uint32_t StdAlt = FLdec*100+FLfrac;
+           StdAlt = (StdAlt*3+5)/10;
+           EncodeStdAltitude(StdAlt); }
+         Data+=8; continue; }
+
+       if( (Data[0]=='+') || (Data[0]=='-') )
+       { int32_t Value; int8_t Len=Read_Float1(Value, Data);
+         if(Len>0)
+         { Data+=Len;
+           if(memcmp(Data, "fpm", 3)==0) { EncodeClimbRate(Value/200); Data+=3; continue; }
+           if(memcmp(Data, "rot", 3)==0) { EncodeTurnRate(3*Value);     Data+=3; continue; }
+         }
+       }
+
+       if( (Data[0]=='g') && (Data[1]=='p') && (Data[2]=='s') )
+       { int16_t HorPrec=Read_Dec2(Data+3);
+         if(HorPrec<0) HorPrec=Read_Dec1(Data[3]);
+         if(HorPrec>=0)
+         { uint16_t DOP=HorPrec*5; if(DOP<10) DOP=10; else if(DOP>230) DOP=230;
+           EncodeDOP(DOP-10); Data+=5; }
+       }
+       while(Data[0]>' ') Data++;
+     }
+
+     if(LatSign=='S') Latitude=(-Latitude); else if(LatSign!='N') return -1;
+     EncodeLatitude(Latitude);
+     if(LonSign=='W') Longitude=(-Longitude); else if(LonSign!='E') return -1;
+     EncodeLongitude(Longitude);
+
+     return 0; }
+
 #endif // __AVR__
+
+   int calcDistanceVector(int32_t &LatDist, int32_t &LonDist, int32_t RefLat, int32_t RefLon, uint16_t LatCos=0x3000, int32_t MaxDist=0x7FFF)
+   { LatDist = ((DecodeLatitude()-RefLat)*1517+0x1000)>>13;
+     if(abs(LatDist)>MaxDist) return -1;
+     LonDist = ((DecodeLongitude()-RefLon)*1517+0x1000)>>13;
+     if(abs(LonDist)>(4*MaxDist)) return -1;
+             LonDist = (LonDist*LatCos+0x800)>>12;
+     if(abs(LonDist)>MaxDist) return -1;
+     return 1; }
+
+   // uint8_t WritePFLAA(char *NMEA, GPS_Position &Position)
+   // { return  WritePFLAA(NMEA, Position.Latitude, Position.Longitude, (Position.Altitude+5)/10, Position.LatitudeCosine); }
+
+   uint8_t WritePFLAA(char *NMEA, int32_t RefLat, int32_t RefLon, int32_t RefAlt, uint16_t LatCos)
+   { int32_t LatDist, LonDist;
+     if(calcDistanceVector(LatDist, LonDist, RefLat, RefLon, LatCos)<0) return 0;     // return zero, when distance too large
+     int32_t AltDist = DecodeAltitude()-RefAlt;
+     return WritePFLAA(NMEA, LatDist, LonDist, AltDist); }                            // return number of formatted characters
+
+   uint8_t WritePFLAA(char *NMEA, int32_t LatDist, int32_t LonDist, int32_t AltDist)
+   { uint8_t Len=0;
+     Len+=Format_String(NMEA+Len, "$PFLAA,0,");                    // sentence name and alarm-level (but no alarms for trackers)
+     Len+=Format_SignDec(NMEA+Len, LatDist);
+     NMEA[Len++]=',';
+     Len+=Format_SignDec(NMEA+Len, LonDist);
+     NMEA[Len++]=',';
+     Len+=Format_SignDec(NMEA+Len, AltDist);                       // [m] relative altitude
+     NMEA[Len++]=',';
+     NMEA[Len++]='0'+getAddrType();                                // address-type (3=OGN)
+     NMEA[Len++]=',';
+     uint32_t Addr = getAddress();                                 // [24-bit] address
+     Len+=Format_Hex(NMEA+Len, (uint8_t)(Addr>>16));               // XXXXXX 24-bit address: RND, ICAO, FLARM, OGN
+     Len+=Format_Hex(NMEA+Len, (uint16_t)Addr);
+     NMEA[Len++]=',';
+     Len+=Format_UnsDec(NMEA+Len, DecodeHeading(), 4, 1);          // [deg] heading (by GPS)
+     NMEA[Len++]=',';
+     Len+=Format_SignDec(NMEA+Len, DecodeTurnRate(), 2, 1);        // [deg/sec] turn rate
+     NMEA[Len++]=',';
+     Len+=Format_UnsDec(NMEA+Len, DecodeSpeed(), 2, 1);            // [approx. m/s] ground speed
+     NMEA[Len++]=',';
+     Len+=Format_SignDec(NMEA+Len, DecodeClimbRate(), 2, 1);       // [m/s] climb/sink rate
+     NMEA[Len++]=',';
+     NMEA[Len++]=HexDigit(getAcftType());                          // [0..F] aircraft-type: 1=glider, 2=tow plane, etc.
+     Len+=NMEA_AppendCheckCRNL(NMEA, Len);
+     NMEA[Len]=0;
+     return Len; }                                                 // return number of formatted characters
 
    uint8_t Print(char *Out) const
    { uint8_t Len=0;
@@ -223,37 +405,11 @@ class OGN_Packet           // Packet structure for the OGN tracker
    OGN_Packet() { Clear(); }
    void Clear(void) { HeaderWord=0; Data[0]=0; Data[1]=0; Data[2]=0; Data[3]=0; }
 
-#ifdef USE_BIT_FIELDS
-/*
-   bool isEmergency(void)   const { return Header.Emergency;   } // emergency declared or detected (high-g shock ?)
-   void setEmergency(void)        {        Header.Emergency=1; }
-   void clrEmergency(void)        {        Header.Emergency=0; }
-
-   bool  isEncrypted(void) const  { return Header.Encrypted;   } // position can be encrypted with a public key (competitions, etc.)
-   void setEncrypted(void)        {        Header.Encrypted=1; } // when in Emergency it must not be encrypted
-   void clrEncrypted(void)        {        Header.Encrypted=0; }
-
-   bool  isOther(void) const  { return Header.Other;   }          // this is a meteo or other report: sends wind speed/direction, pressure, temperatue and humidity
-   void setOther(void)        {        Header.Other=1; }
-   void clrOther(void)        {        Header.Other=0; }
-
-   uint8_t getRelayCount(void) const    { return Header.RelayCount; } // how many time the packet has been relayed
-   void    setRelayCount(uint8_t Count) { Header.RelayCount=Count; }
-   void    incRelayCount(void)          { Header.RelayCount+=1; }
-*/
    uint8_t getAddrType(void) const   { return Header.AddrType; }      // Address type: 0 = Random, 1 = ICAO, 2 = FLARM, 3 = OGN
    void    setAddrType(uint8_t Type) { Header.AddrType = Type; }
 
    uint32_t getAddress(void) const   { return Header.Address; }        // Address: 24-bit
    void     setAddress(uint32_t Address) { Header.Address = Address; }
-#else
-
-   uint8_t getAddrType(void) const   { return (HeaderWord>>24)&0x03; }      // Address type: 0 = Random, 1 = ICAO, 2 = FLARM, 3 = OGN
-   void    setAddrType(uint8_t Type) { HeaderWord = (HeaderWord&0xFCFFFFFF) | ((uint32_t)(Type&0x03)<<24); }
-
-   uint32_t getAddress(void) const   { return HeaderWord&0x00FFFFFF; }        // Address: 24-bit
-   void     setAddress(uint32_t Address) { HeaderWord = (HeaderWord&0xFF000000) | (Address&0x00FFFFFF); }
-#endif
 
    uint8_t getRelayCount(void) const { return (HeaderWord>>28)&0x03; } // how many time the packet has been relayed
    void    setRelayCount(uint8_t Count) { HeaderWord = (HeaderWord&0xCFFFFFFF) | ((uint32_t)(Count&0x03)<<28); }
@@ -277,7 +433,6 @@ class OGN_Packet           // Packet structure for the OGN tracker
    bool goodAddrParity(void) const  { return ((Count1s(HeaderWord&0x0FFFFFFF)&1)==0); }  // Address parity should be EVEN
    void calcAddrParity(void)        { if(!goodAddrParity()) HeaderWord ^= 0x08000000; }  // if not correct parity, flip the parity bit
 
-#ifdef USE_BIT_FIELDS
    bool  isStealth(void) const        { return Position.Stealth; }   // position not to be displayed on public webpages
    void setStealth(uint8_t Stealth=1) { Position.Stealth = Stealth; }
    void clrStealth(void)              {        Position.Stealth = 0; }
@@ -291,40 +446,16 @@ class OGN_Packet           // Packet structure for the OGN tracker
    uint8_t  getFixMode(void) const { return Position.FixMode; }           // 0 = 2-D, 1 = 3-D
    void     setFixMode(uint8_t Mode) { Position.FixMode = Mode; }
 
-//   bool  isBaro(void) const  { return Position.hasBaro; } // climb and alitude are takens with the barometer
-//   void setBaro(void)        {        Position.hasBaro=1; } // after processing and calibration with the GPS
-//   void clrBaro(void)        {        Position.hasBaro=0; }
    bool hasBaro(void) const             { return Position.BaroMSB || Position.BaroAltDiff; }
    void clrBaro(void)                   { Position.BaroMSB=0; Position.BaroAltDiff=0; }
    int16_t getBaroAltDiff(void) const   { int16_t AltDiff=Position.BaroAltDiff; if(Position.BaroMSB==0) AltDiff|=0xFF00; return AltDiff; }
    void setBaroAltDiff(int16_t AltDiff)
    { if(AltDiff<(-255)) AltDiff=(-255); else if(AltDiff>255) AltDiff=255;
      Position.BaroMSB = (AltDiff&0xFF00)==0; Position.BaroAltDiff=AltDiff&0xFF; }
+   void EncodeStdAltitude(int32_t StdAlt) { setBaroAltDiff(StdAlt-DecodeAltitude()); }
 
    uint8_t  getFixQuality(void) const   { return Position.FixQuality; }        // 0 = no fix, 1 = GPS, 2 = diff. GPS, 3 = other
    void     setFixQuality(uint8_t Qual) { Position.FixQuality = Qual; }
-#else
-   bool  isStealth(void) const  { return Data[3] &  0x00080000; }   // position not to be displayed on public webpages
-   void setStealth(uint8_t Stealth) { clrStealth(); if(Stealth) setStealth(); }
-   void setStealth(void)        {        Data[3] |= 0x00080000; }
-   void clrStealth(void)        {        Data[3] &= 0xFFF7FFFF; }
-
-   uint8_t  getAcftType(void) const { return (Data[3]>>20)&0x0F; }
-   void     setAcftType(uint8_t Type) { Data[3] = (Data[3]&0xFF0FFFFF) | ((uint32_t)(Type&0x0F)<<20); }
-
-   uint8_t  getTime(void) const { return (Data[0]>>24)&0x3F; }              // 6 lower bits of the UnitTime or the second counter ?
-   void     setTime(uint8_t Time) { Data[0] = (Data[0]&0xC0FFFFFF) | ((uint32_t)(Time&0x3F)<<24); }
-
-   uint8_t  getFixMode(void) const { return (Data[1]>>31)&0x01; }           // 0 = 2-D, 1 = 3-D
-   void     setFixMode(uint8_t Mode) { Data[1] = (Data[1]&0x7FFFFFFF) | ((uint32_t)(Mode&0x01)<<31); }
-
-   bool  isBaro(void) const  { return Data[1] &  0x40000000; } // climb and alitude are takens with the barometer
-   void setBaro(void)        {        Data[1] |= 0x40000000; } // after processing and calibration with the GPS
-   void clrBaro(void)        {        Data[1] &= 0xBFFFFFFF; }
-
-   uint8_t  getFixQuality(void) const { return (Data[0]>>30)&0x03; }        // 0 = no fix, 1 = GPS, 2 = diff. GPS, 3 = other
-   void     setFixQuality(uint8_t Qual) { Data[0] = (Data[0]&0x3FFFFFFF) | ((uint32_t)(Qual&0x03)<<30); }
-#endif
 
    static uint16_t EncodeUR2V8(uint16_t Value)
    {      if(Value<0x100) { }
@@ -396,7 +527,6 @@ class OGN_Packet           // Packet structure for the OGN tracker
      Value = DecodeUR2V6(Value&0x00FF);
      return Sign ? -Value: Value; }
 
-#ifdef USE_BIT_FIELDS
    void EncodeLatitude(int32_t Latitude)                                // encode Latitude: units are 0.0001/60 degrees
    { Position.Latitude = Latitude>>3; }
 
@@ -470,8 +600,11 @@ class OGN_Packet           // Packet structure for the OGN tracker
    void EncodeHeading(int16_t Heading)
    { Position.Heading = (((int32_t)Heading<<10)+180)/3600; }
 
-   void setHeading(uint16_t HeadingAngle)
+   void setHeadingAngle(uint16_t HeadingAngle)
    { Position.Heading = (((HeadingAngle+32)>>6)); }
+
+   uint16_t getHeadingAngle(void) const
+   { return (uint16_t)Position.Heading<<6; }
 
    void EncodeTurnRate(int16_t Turn)         // [0.1 deg/sec]
    { Position.TurnRate = EncodeSR2V5(Turn); }
@@ -484,124 +617,6 @@ class OGN_Packet           // Packet structure for the OGN tracker
 
    int16_t DecodeClimbRate(void) const
    { return DecodeSR2V6(Position.ClimbRate); }
-
-#else
-   void EncodeLatitude(int32_t Latitude)                                // encode Latitude: units are 0.0001/60 degrees
-   { Latitude>>=3; Data[0] = (Data[0]&0xFF000000) | (Latitude&0x00FFFFFF); } // scaled by 8 thus 1.5m resolution
-
-   int32_t DecodeLatitude(void) const
-   { int32_t Latitude = Data[0]&0x00FFFFFF;
-     if(Latitude&0x00800000) Latitude|=0xFF000000;
-     Latitude = (Latitude<<3)+4; return Latitude; }
-
-   void EncodeLongitude(int32_t Longitude)                             // encode Longitude: units are 0.0001/60 degrees
-   { Longitude>>=4; Data[1] = (Data[1]&0xFF000000) | (Longitude&0x00FFFFFF); } // scaled down by 16 thus 3m resolution on the equator
-
-   int32_t DecodeLongitude(void) const
-   { int32_t Longitude = Data[1]&0x00FFFFFF;
-     if(Longitude&0x00800000) Longitude|=0xFF000000;
-     Longitude = (Longitude<<4)+8; return Longitude; }
-
-   void EncodeAltitude(int32_t Altitude)                               // encode altitude in meters
-   {      if(Altitude<0)      Altitude=0;
-     else if(Altitude<0x1000) { }
-     else if(Altitude<0x3000) Altitude = 0x1000 | ((Altitude-0x1000)>>1);
-     else if(Altitude<0x7000) Altitude = 0x2000 | ((Altitude-0x3000)>>2);
-     else if(Altitude<0xF000) Altitude = 0x3000 | ((Altitude-0x7000)>>3);
-     else                     Altitude = 0x3FFF;
-     Data[2] = (Data[2]&0xFFFFC000) | (Altitude&0x3FFF); }
-
-   int32_t DecodeAltitude(void) const                                   // return Altitude in meters
-   { int32_t Altitude =  Data[2]     &0x0FFF;
-     int32_t Range    = (Data[2]>>12)&0x0003;
-     if(Range==0) return         Altitude;       // 0000..0FFF
-     if(Range==1) return 0x1001+(Altitude<<1);   // 1000..2FFE
-     if(Range==2) return 0x3002+(Altitude<<2);   // 3000..6FFC
-                  return 0x7004+(Altitude<<3); } // 7000..EFF8 => max. altitude: 61432 meters
-
-   // void EncodeStdAltDiff(int8_t AltDiff)
-   // { Data[3] = (Data[3]&0x00FFFFFF) | ((int32_t)AltDiff<<24) ; }
-
-   // int8_t DecodeStdAltDiff(void) const
-   // { return (Data[3]>>24)&0xFF; }
-
-   void EncodeDOP(uint8_t DOP)
-   {      if(DOP<0)    DOP=0;
-     else if(DOP<0x10) { }
-     else if(DOP<0x30) DOP = 0x10 | ((DOP-0x10)>>1);
-     else if(DOP<0x70) DOP = 0x20 | ((DOP-0x30)>>2);
-     else if(DOP<0xF0) DOP = 0x30 | ((DOP-0x70)>>3);
-     else              DOP = 0x3F;
-     Data[1] = (Data[1]&0xC0FFFFFF) | ((uint32_t)DOP<<24); }
-
-   uint8_t DecodeDOP(void) const
-   { uint8_t DOP   =  (Data[1]>>24)&0x0F;
-     int8_t Range =  (Data[1]>>28)&0x03;
-     if(Range==0) return       DOP;              // 00..0F
-     if(Range==1) return 0x11+(DOP<<1);          // 10..2E
-     if(Range==2) return 0x32+(DOP<<2);          // 30..6C
-                  return 0x74+(DOP<<3); }        // 70..E8 => max. DOP = 232*0.1=23.2
-
-   void EncodeSpeed(int16_t Speed)                                       // speed in 0.2 knots (or 0.1m/s)
-   { if(Speed<0) Speed=0;
-     else Speed = EncodeUR2V8(Speed);
-     Data[2] = (Data[2]&0xFF003FFF) | ((uint32_t)Speed<<14); }
-
-   int16_t DecodeSpeed(void) const           // return speed in 0.2 knots or 0.1m/s units
-   { return DecodeUR2V8((Data[2]>>14)&0x03FF); } //  => max. speed: 3832*0.2 = 766 knots
-
-   int16_t DecodeHeading(void) const         // return Heading in 0.1 degree units 0..359.9 deg
-   { int32_t Heading = Data[3]&0x3FF;
-     return (Heading*3600+512)>>10; }
-
-   void EncodeHeading(int16_t Heading)
-   { Heading = (((int32_t)Heading<<10)+180)/3600;
-     Data[3] = (Data[3]&0xFFFFFC00) | ((Heading&0x3FF)); }
-
-   void setHeading(uint16_t HeadingAngle)
-   { Data[3] = (Data[3]&0xFFFFFC00) | (((HeadingAngle+32)>>6)); }
-
-   void EncodeTurnRate(int16_t Turn)         // [0.1 deg/sec]
-   { int8_t Sign=0; if(Turn<0) { Turn=(-Turn); Sign=0x80; }
-          if(Turn<0x020) { }
-     else if(Turn<0x060) Turn = 0x020 | ((Turn-0x020)>>1);
-     else if(Turn<0x0E0) Turn = 0x040 | ((Turn-0x060)>>2);
-     else if(Turn<0x1E0) Turn = 0x060 | ((Turn-0x0E0)>>3);
-     else                Turn = 0x07F;
-     Turn |= Sign;
-     Data[2] = (Data[2]&0x00FFFFFF) | ((uint32_t)Turn<<24); }
-
-   int16_t DecodeTurnRate(void) const
-   { int8_t Sign =(Data[2]>>31)&0x01;
-     int8_t Range=(Data[2]>>29)&0x03;
-     int16_t Turn =(Data[2]>>24)&0x1F;
-          if(Range==0) { }                          // 000..01F
-     else if(Range==1) { Turn = 0x021+(Turn<<1); }  // 020..05E
-     else if(Range==2) { Turn = 0x062+(Turn<<2); }  // 060..0DC
-     else              { Turn = 0x0E4+(Turn<<3); }  // 0E0..1D8 => max. turn rate = +/- 472*0.1 = +/- 47.2 deg/s
-     return Sign ? -Turn:Turn; }
-
-   void EncodeClimbRate(int16_t Climb)
-   { int16_t Sign=0; if(Climb<0) { Climb=(-Climb); Sign=0x100; }
-          if(Climb<0x040) { }
-     else if(Climb<0x0C0) Climb = 0x040 | ((Climb-0x040)>>1);
-     else if(Climb<0x1C0) Climb = 0x080 | ((Climb-0x0C0)>>2);
-     else if(Climb<0x3C0) Climb = 0x0C0 | ((Climb-0x1C0)>>3);
-     else                 Climb = 0x0FF;
-     Climb |= Sign;
-     Data[3] = (Data[3]&0xFFF803FF) | ((int32_t)Climb<<10); }
-
-   int16_t DecodeClimbRate(void) const
-   { int32_t Sign =(Data[3]>>18)&0x01;
-     int32_t Range=(Data[3]>>16)&0x03;
-     int32_t Climb=(Data[3]>>10)&0x3F;
-          if(Range==0) { }                            // 000..03F
-     else if(Range==1) { Climb = 0x041+(Climb<<1); }  // 040..0BE
-     else if(Range==2) { Climb = 0x0C2+(Climb<<2); }  // 0C0..1BC
-     else              { Climb = 0x1C4+(Climb<<3); }  // 1C0..3B8 => max. climb rate = +/- 952*0.1 = +/- 95.2 m/s
-     return Sign ? -Climb:Climb; }
-
-#endif
 
 /*
    void EncodeTemperature(int16_t Temp)             // [0.5 degC]
@@ -889,14 +904,17 @@ class OGN_RxPacket                                        // OGN packet with FEC
      NMEA[Len]=0;
      return Len; }
 
-   uint8_t WritePFLAA(char *NMEA, int32_t RefLat, int32_t RefLon, int32_t RefAlt, int32_t LatCos)
+/* moved to OGN_Packet
+   uint8_t WritePFLAA(char *NMEA, int32_t RefLat, int32_t RefLon, int32_t RefAlt, uint16_t LatCos, int32_t MaxDist=50000)
    { uint8_t Len=0;
-     Len+=Format_String(NMEA+Len, "$PFLAA,0,");                    // sentence name and alarm-level (but no alarms for trackers)
      int32_t LatDist = ((int64_t)(Packet.DecodeLatitude()-RefLat)*0x2f684bda+0x80000000)>>32; // relative distance along latitude
+     if(abs(LatDist)>MaxDist) return Len;
+     int32_t LonDist = ((int64_t)(Packet.DecodeLongitude()-RefLon)*0x2f684bda+0x80000000)>>32; // relatice distnace along longitude
+             LonDist = ((int64_t)LonDist*LatCos+0x2000)>>12;
+     if(abs(LonDist)>MaxDist) return Len;
+     Len+=Format_String(NMEA+Len, "$PFLAA,0,");                    // sentence name and alarm-level (but no alarms for trackers)
      Len+=Format_SignDec(NMEA+Len, LatDist);
      NMEA[Len++]=',';
-     int32_t LonDist = ((int64_t)(Packet.DecodeLongitude()-RefLon)*0x2f684bda+0x80000000)>>32; // relatice distnace along longitude
-             LonDist = ((int64_t)LonDist*LatCos+0x40000000)>>31;
      Len+=Format_SignDec(NMEA+Len, LonDist);
      NMEA[Len++]=',';
      Len+=Format_SignDec(NMEA+Len, Packet.DecodeAltitude()-RefAlt);       // [m] relative altitude
@@ -919,7 +937,7 @@ class OGN_RxPacket                                        // OGN packet with FEC
      Len+=NMEA_AppendCheckCRNL(NMEA, Len);
      NMEA[Len]=0;
      return Len; }
-
+*/
    uint8_t Print(char *Out)
    { uint8_t Len=0;
      Out[Len++]=HexDigit(Packet.getAcftType()); Out[Len++]=':';
@@ -1131,7 +1149,8 @@ class GPS_Position
 
    int32_t Latitude;            // [0.0001/60 deg] about 0.018m accuracy (to convert to u-Blox GPS 1e-7deg units mult by 50/3)
    int32_t Longitude;           // [0.0001/60 deg]
-   int32_t LatitudeCosine;      // [2^-31] Latitude cosine for distance calculation
+   // int32_t LatitudeCosine;      // [2^-31] Latitude cosine for distance calculation
+  uint16_t LatitudeCosine;      // [2^-12] Latitude cosine for distance calculation
 
    int32_t StdAltitude;         // [0.1 meter] standard pressure altitude (from the pressure sensor)
    int16_t Temperature;         // [0.1 degC]
@@ -1143,7 +1162,7 @@ class GPS_Position
    void Clear(void)
    { Flags=0; FixQuality=0; FixMode=0; PDOP=0; HDOP=0; VDOP=0;
      setDefaultDate(); setDefaultTime();
-     Latitude=0; Longitude=0; LatitudeCosine=0x7FFFFFFF;
+     Latitude=0; Longitude=0; LatitudeCosine=0x4000; // LatitudeCosine=0x7FFFFFFF;
      Altitude=0; GeoidSeparation=0;
      Speed=0; Heading=0; ClimbRate=0; TurnRate=0;
      StdAltitude=0; Temperature=0; }
@@ -1222,7 +1241,7 @@ class GPS_Position
    { printf("Time/Date = "); PrintDateTime(); printf("\n"); // printf(" = %10ld.%03dsec\n", (long int)UnixTime, mSec);
      printf("FixQuality/Mode=%d/%d: %d satellites DOP/H/V=%3.1f/%3.1f/%3.1f\n", FixQuality, FixMode, Satellites, 0.1*PDOP, 0.1*HDOP, 0.1*VDOP);
      printf("FixQuality=%d: %d satellites HDOP=%3.1f\n", FixQuality, Satellites, 0.1*HDOP);
-     printf("Lat/Lon/Alt = [%+10.6f,%+10.6f]deg %+3.1f(%+3.1f)m LatCosine=%+6.3f\n", 0.0001/60*Latitude, 0.0001/60*Longitude, 0.1*Altitude, 0.1*GeoidSeparation, 1.0/(1<<31)*LatitudeCosine);
+     printf("Lat/Lon/Alt = [%+10.6f,%+10.6f]deg %+3.1f(%+3.1f)m LatCosine=%+6.3f\n", 0.0001/60*Latitude, 0.0001/60*Longitude, 0.1*Altitude, 0.1*GeoidSeparation, 1.0/(1<<12)*LatitudeCosine);
      printf("Speed/Heading = %3.1fm/s %05.1fdeg\n", 0.1*Speed, 0.1*Heading);
    }
 
@@ -1380,48 +1399,51 @@ class GPS_Position
      Packet.EncodeClimbRate(ClimbRate);
      Packet.EncodeTurnRate(TurnRate);
      Packet.EncodeAltitude((Altitude+5)/10);
-     if(hasBaro())
-     { int16_t AltDiff = (StdAltitude+5)/10-Packet.DecodeAltitude();;
+     if(hasBaro()) Packet.EncodeStdAltitude(StdAltitude);
+     // { int16_t AltDiff = (StdAltitude+5)/10-Packet.DecodeAltitude();;
        // if(AltDiff>127) AltDiff=127;
        // else if(AltDiff<(-127)) AltDiff=(-127);
        // Packet.EncodeStdAltDiff(AltDiff);
-       Packet.setBaroAltDiff(AltDiff); }
+     //  Packet.setBaroAltDiff(AltDiff); }
      else
      { // Packet.EncodeStdAltDiff(0);
        Packet.clrBaro(); }
      return 0; }
 
-   uint8_t getFreqPlan(void) const // get the frequency plan from Lat/Lon: 1 = Europe + Africa, 2 = USA/CAnada, 3 = Australia + South America, 4 = New Zeeland
-   { if( (Longitude>=(-20*600000)) && (Longitude<=(60*600000)) ) return 1; // between -20 and 60 deg Lat => Europe + Africa: 868MHz band
-     if( Latitude<(20*600000) )                                            // below 20deg latitude
-     { if( ( Longitude>(164*600000)) && (Latitude<(-30*600000)) && (Latitude>(-48*600000)) ) return 4;  // => New Zeeland
-       return 3; }                                                         // => Australia + South America: upper half of 915MHz band
-     return 2; }                                                           // => USA/Canada: full 915MHz band
+   // uint8_t getFreqPlan(void) const // get the frequency plan from Lat/Lon: 1 = Europe + Africa, 2 = USA/CAnada, 3 = Australia + South America, 4 = New Zeeland
+   // { if( (Longitude>=(-20*600000)) && (Longitude<=(60*600000)) ) return 1; // between -20 and 60 deg Lat => Europe + Africa: 868MHz band
+   //   if( Latitude<(20*600000) )                                            // below 20deg latitude
+   //   { if( ( Longitude>(164*600000)) && (Latitude<(-30*600000)) && (Latitude>(-48*600000)) ) return 4;  // => New Zeeland
+   //     return 3; }                                                         // => Australia + South America: upper half of 915MHz band
+   //   return 2; }                                                           // => USA/Canada: full 915MHz band
 
-   static int32_t calcLatDistance(int32_t Lat1, int32_t Lat2)             // [m] distance along latitude
-   { return ((int64_t)(Lat2-Lat1)*0x2f684bda+0x80000000)>>32; }
+   // static int32_t calcLatDistance(int32_t Lat1, int32_t Lat2)             // [m] distance along latitude
+   // { return ((int64_t)(Lat2-Lat1)*0x2f684bda+0x80000000)>>32; }
 
-   static int32_t calcLatAngle32(int32_t Lat)                             // convert latitude to 32-bit integer angle
-   { return ((int64_t)Lat*2668799779u+0x4000000)>>27; }
+   // static int32_t calcLatAngle32(int32_t Lat)                             // convert latitude to 32-bit integer angle
+   // { return ((int64_t)Lat*2668799779u+0x4000000)>>27; }
 
    static int16_t calcLatAngle16(int32_t Lat)                             // convert latitude to 16-bit integer angle
    { return ((int64_t)Lat*1303125+0x80000000)>>32; }
 
-   static int32_t calcLatCosine(int32_t LatAngle)                         // calculate the cosine of the latitude 32-bit integer angle
-   { return IntSine((uint32_t)(LatAngle+0x40000000)); }
+   // static int32_t calcLatCosine(int32_t LatAngle)                         // calculate the cosine of the latitude 32-bit integer angle
+   // { return IntSine((uint32_t)(LatAngle+0x40000000)); }
 
-   static int32_t calcLatCosine(int16_t LatAngle)                         // calculate the cosine of the latitude 16-bit integer angle
-   { return IntSine((uint16_t)(LatAngle+0x4000)); }
+   // static int32_t calcLatCosine(int16_t LatAngle)                         // calculate the cosine of the latitude 16-bit integer angle
+   // { return IntSine((uint16_t)(LatAngle+0x4000)); }
 
-   int32_t getLatDistance(int32_t RefLatitude) const                      // [m] distance along latitude
-   { return calcLatDistance(RefLatitude, Latitude); }
+   static int16_t calcLatCosine(int16_t LatAngle)
+   { return Icos(LatAngle); }
 
-   int32_t getLonDistance(int32_t RefLongitude) const                     // [m] distance along longitude
-   { int32_t Dist = calcLatDistance(RefLongitude, Longitude);             //
-     int16_t LatAngle =  calcLatAngle16(Latitude);
-     int32_t LatCos = calcLatCosine(LatAngle);
-     // printf("Latitude=%+d, LatAngle=%04X LatCos=%08X\n", Latitude, (uint16_t)LatAngle, LatCos);
-     return ((int64_t)Dist*LatCos+0x40000000)>>31; }                      // distance corrected by the latitude cosine
+   // int32_t getLatDistance(int32_t RefLatitude) const                      // [m] distance along latitude
+   // { return calcLatDistance(RefLatitude, Latitude); }
+
+   // int32_t getLonDistance(int32_t RefLongitude) const                     // [m] distance along longitude
+   // { int32_t Dist = calcLatDistance(RefLongitude, Longitude);             //
+   //   int16_t LatAngle =  calcLatAngle16(Latitude);
+   //   int32_t LatCos = calcLatCosine(LatAngle);
+   //   // printf("Latitude=%+d, LatAngle=%04X LatCos=%08X\n", Latitude, (uint16_t)LatAngle, LatCos);
+   //   return ((int64_t)Dist*LatCos+0x40000000)>>31; }                      // distance corrected by the latitude cosine
 
    void    calcLatitudeCosine(void)
    { int16_t LatAngle =  calcLatAngle16(Latitude);

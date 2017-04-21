@@ -12,10 +12,8 @@
 
 #include "uart1.h"
 
-SemaphoreHandle_t UART1_Mutex;            // Console port Mutex
-
-VolatileFIFO<uint8_t, 32> UART1_RxFIFO;
-VolatileFIFO<uint8_t, 64> UART1_TxFIFO;
+VolatileFIFO<uint8_t, UART1_RxFIFO_Size> UART1_RxFIFO;
+VolatileFIFO<uint8_t, UART1_TxFIFO_Size> UART1_TxFIFO; // large buffer for the console output
 
 // UART1 pins:
 // PA8 	USART1_CK
@@ -37,8 +35,6 @@ void UART1_Configuration (int BaudRate)
   USART_Cmd(USART1, ENABLE);                            // Enable USART1
   USART_ITConfig(USART1, USART_IT_RXNE, ENABLE);        // Enable Rx-not-empty interrupt
   // NVIC_EnableIRQ(USART1_IRQn);
-
-  UART1_Mutex = xSemaphoreCreateMutex();
 }
 
 #ifdef __cplusplus
