@@ -25,12 +25,12 @@ void ADC_Configuration(void)
   ADC_StartCalibration(ADC1);                                           // Start ADC1 calibaration
   while(ADC_GetCalibrationStatus(ADC1));                                // Check the end of ADC1 calibration
   ADC_TempSensorVrefintCmd(ENABLE);                                     // enable Vrefint and Temperature sensor
-
+#ifdef WITH_KNOB
   GPIO_InitTypeDef  GPIO_InitStructure;
   GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_0;                           // Pin #0
   GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_AIN;                        // as analog input
   GPIO_Init(GPIOB, &GPIO_InitStructure);                                // for Port B
-
+#endif
 }
 
 uint16_t ADC1_Read(uint8_t Channel)                                     // convert and read given channel
