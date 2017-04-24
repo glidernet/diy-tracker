@@ -82,6 +82,6 @@ int main(int argc, char *argv[])
   Baro.CalcTemperature();
   Baro.CalcPressure();
 
-  printf("Temperature = %d, Pressure = %d\n", Baro.Pressure, Baro.Temperature);
+  printf("Temperature = %d, Pressure = %d\n", Baro.Temperature, Baro.Pressure);
 }
 
