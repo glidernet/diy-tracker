@@ -43,7 +43,7 @@
 
 #ifdef WITH_OGN_CUBE_1 // OGN-CUBE-1
 
-// PB0: RF chip RESET: active HIGH
+// PB1: RF chip RESET: active HIGH for RFM69, active low for RFM95
 #ifdef SPEEDUP_STM_LIB
 inline void RFM_RESET_High  (void) { GPIOB->BSRR = GPIO_Pin_1; }
 inline void RFM_RESET_Low   (void) { GPIOB->BRR  = GPIO_Pin_1; }
@@ -52,7 +52,7 @@ inline void RFM_RESET_High  (void) { GPIO_SetBits  (GPIOB, GPIO_Pin_1); }
 inline void RFM_RESET_Low   (void) { GPIO_ResetBits(GPIOB, GPIO_Pin_1); }
 #endif
 
-// PB1: RF chip SELECT: active LOW
+// PB0: RF chip SELECT: active LOW
 #ifdef SPEEDUP_STM_LIB
 inline void RFM_Select  (void) { GPIOB->BRR  = GPIO_Pin_0; }
 inline void RFM_Deselect(void) { GPIOB->BSRR = GPIO_Pin_0; }
@@ -79,7 +79,7 @@ inline void RFM_RESET_High  (void) { GPIO_SetBits  (GPIOB, GPIO_Pin_5); }
 inline void RFM_RESET_Low   (void) { GPIO_ResetBits(GPIOB, GPIO_Pin_5); }
 #endif
 
-// PB2: RF chip IRQ: active HIGH
+// PB4: RF chip IRQ: active HIGH
 #ifdef SPEEDUP_STM_LIB
 inline bool RFM_DIO0_isOn(void)   { return (GPIOB->IDR & GPIO_Pin_4) != 0; }
 // inline bool RFM_DIO4_isOn(void)   { return (GPIOB->IDR & GPIO_Pin_3) != 0; }
