@@ -110,91 +110,93 @@ static void ProcBaro()
     { uint8_t Err=Baro.AcquireRawPressure();                              // take pressure measurement
       if(Err==0) { Baro.CalcPressure(); AverPress+=Baro.Pressure; AverCount++; } // sum-up average pressure
       TickType_t Time=xTaskGetTickCount()-Start; if(Time>=450) break; }   // but no longer than 450ms to fit into 0.5 second slot
+
+    if(AverCount==0) { PipeCount=0; return ; }                          // and we summed-up some measurements
+    AverPress = ( (AverPress<<2) + (AverCount>>1) )/AverCount;          // [0.25Pa]] make the average
 #endif
 #ifdef WITHBMP280
     uint8_t Err=Baro.Acquire();
     if(Err==0) { Baro.Calculate(); }
+          else { PipeCount=0; return; }
+    AverPress = Baro.Pressure;
 #endif
 
-    if(AverCount)                                                         // and we summed-up some measurements
-    { AverPress = (AverPress+(AverCount>>1))/AverCount;                   // make the average
+    BaroPipe.Input(AverPress);                                          // [0.25Pa]
+    if(PipeCount<255) PipeCount++;                                      // count data going to the slope fitting pipe
+    if(PipeCount<4) return;
 
-      BaroPipe.Input(AverPress);                                          // [Pa]
-      if(PipeCount<255) PipeCount++;                                      // count data going to the slope fitting pipe
-      if(PipeCount>=4)
-      { BaroPipe.FitSlope();                                             // fit the average and slope from the four most recent pressure points
-        int32_t PLR = Atmosphere::PressureLapseRate(AverPress, Baro.Temperature); // [0.0001m/Pa]
-        int32_t ClimbRate = (BaroPipe.Slope*PLR)/200;                             // [0.25Pa/0.5sec] * [0.0001m/Pa] x 200 => [0.01m/sec]
+    BaroPipe.FitSlope();                                             // fit the average and slope from the four most recent pressure points
+    int32_t PLR = Atmosphere::PressureLapseRate(((AverPress+2)>>2), Baro.Temperature); // [0.0001m/Pa]
+    int32_t ClimbRate = (BaroPipe.Slope*PLR)/800;                    // [1/16Pa/0.5sec] * [0.0001m/Pa] x 800 => [0.01m/sec]
 
-        BaroPipe.CalcNoise();                                            // calculate the noise (average square residue)
-        uint32_t Noise=BaroNoise.Process(BaroPipe.Noise);                // pass the noise through the low pass filter
-                 Noise=(IntSqrt(100*Noise)+32)>>6;                       // [0.1 Pa] noise (RMS) measured on the pressure
+    BaroPipe.CalcNoise();                                            // calculate the noise (average square residue)
+    uint32_t Noise=BaroNoise.Process(BaroPipe.Noise);                // pass the noise through the low pass filter
+             Noise=(IntSqrt(25*Noise)+64)>>7;                        // [0.1 Pa] noise (RMS) measured on the pressure
 
-        int32_t Pressure=BaroPipe.Aver;                                  // [0.25 Pa]
-        int32_t StdAltitude = Atmosphere::StdAltitude((Pressure+2)>>2);  // [0.1 m]
-        int32_t ClimbRate4sec = ((Pressure-PressDelay.Input(Pressure))*PLR)/800; // [0.01m/sec] climb rate over 4 sec.
+    int32_t Pressure=BaroPipe.Aver;                                  // [1/16Pa]
+    int32_t StdAltitude = Atmosphere::StdAltitude((Pressure+8)>>4);  // [0.1 m]
+    int32_t ClimbRate4sec = ((Pressure-PressDelay.Input(Pressure))*PLR)/3200; // [0.01m/sec] climb rate over 4 sec.
 #ifdef WITH_VARIO
-        VarioSound(ClimbRate);
-        // if(abs(ClimbRate4sec)>50) VarioSound(ClimbRate);
-	//                      else VarioSound(2*ClimbRate4sec);
+    VarioSound(ClimbRate);
+    // if(abs(ClimbRate4sec)>50) VarioSound(ClimbRate);
+    //                      else VarioSound(2*ClimbRate4sec);
 #endif
-        if( (Phase>=500) && GPS_TimeSinceLock)
-        { PressAver.Process(Pressure);                                   // [0.25 Pa] pass pressure through low pass filter
-          AltAver.Process(GPS_Altitude);                                 // [0.1 m] pass GPS altitude through same low pass filter
-        }
-        int32_t PressDiff=Pressure-((PressAver.Out+2048)>>12);           // [0.25 Pa] pressure - <pressure>
-        int32_t AltDiff = (PressDiff*(PLR>>4))/250;                      // [0.1 m]
-        int32_t Altitude=((AltAver.Out+2048)>>12)+AltDiff;               // [0.1 m]
+    Pressure = (Pressure+2)>>2;                                      // [0.25 Pa]
+    if( (Phase>=500) && GPS_TimeSinceLock )
+    { PressAver.Process(Pressure);                                   // [0.25 Pa] pass pressure through low pass filter
+      AltAver.Process(GPS_Altitude);                                 // [0.1 m] pass GPS altitude through same low pass filter
+    }
+    int32_t PressDiff=Pressure-((PressAver.Out+2048)>>12);           // [0.25 Pa] pressure - <pressure>
+    int32_t AltDiff = (PressDiff*(PLR>>4))/250;                      // [0.1 m]
+    int32_t Altitude=((AltAver.Out+2048)>>12)+AltDiff;               // [0.1 m]
 
-        uint8_t Frac = Sec%10;
-        if(Frac==0)
-        { GPS_Position *PosPtr = GPS_getPosition(Sec/10);                 // get GPS position record for this second
-          if(PosPtr)                                                     // if found:
-          { PosPtr->StdAltitude = StdAltitude;                           // store standard pressure altitude
-            PosPtr->Temperature = Baro.Temperature;                      // and temperature in the GPS record
-            PosPtr->setBaro(); }
-        }
+    uint8_t Frac = Sec%10;
+    if(Frac==0)
+    { GPS_Position *PosPtr = GPS_getPosition(Sec/10);                 // get GPS position record for this second
+      if(PosPtr)                                                     // if found:
+      { PosPtr->StdAltitude = StdAltitude;                           // store standard pressure altitude
+        PosPtr->Temperature = Baro.Temperature;                      // and temperature in the GPS record
+        PosPtr->setBaro(); }
+    }
 
-        uint8_t Len=0;                                                   // start preparing the barometer NMEA sentence
-        Len+=Format_String(Line+Len, "$POGNB,");
-        Len+=Format_UnsDec(Line+Len, Sec, 3, 1);                         // [sec] measurement time
-        Line[Len++]=',';
-        Len+=Format_SignDec(Line+Len, Baro.Temperature, 2, 1);           // [degC] temperature
-        Line[Len++]=',';
-        Len+=Format_UnsDec(Line+Len, (uint32_t)(10*Pressure+2)>>2, 2, 1); // [Pa] pressure
-        Line[Len++]=',';
-        Len+=Format_UnsDec(Line+Len, Noise, 2, 1);                       // [Pa] pressure noise
-        Line[Len++]=',';
-        Len+=Format_SignDec(Line+Len, StdAltitude, 2, 1);                // [m] standard altitude (calc. from pressure)
-        Line[Len++]=',';
-        Len+=Format_SignDec(Line+Len, Altitude,    2, 1);                // [m] altitude (from cross-calc. with the GPS)
-        Line[Len++]=',';
-        Len+=Format_SignDec(Line+Len, ClimbRate,   3, 2);                // [m/s] climb rate
-        Line[Len++]=',';
-        Len+=NMEA_AppendCheckCRNL(Line, Len);
-        xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
-        Format_String(CONS_UART_Write, Line, Len);                           // send NMEA sentence to the console (UART1)
-        xSemaphoreGive(CONS_Mutex);
+    uint8_t Len=0;                                                   // start preparing the barometer NMEA sentence
+    Len+=Format_String(Line+Len, "$POGNB,");
+    Len+=Format_UnsDec(Line+Len, Sec, 3, 1);                         // [sec] measurement time
+    Line[Len++]=',';
+    Len+=Format_SignDec(Line+Len, Baro.Temperature, 2, 1);           // [degC] temperature
+    Line[Len++]=',';
+    Len+=Format_UnsDec(Line+Len, (uint32_t)(10*Pressure+2)>>2, 2, 1); // [Pa] pressure
+    Line[Len++]=',';
+    Len+=Format_UnsDec(Line+Len, Noise, 2, 1);                       // [Pa] pressure noise
+    Line[Len++]=',';
+    Len+=Format_SignDec(Line+Len, StdAltitude, 2, 1);                // [m] standard altitude (calc. from pressure)
+    Line[Len++]=',';
+    Len+=Format_SignDec(Line+Len, Altitude,    2, 1);                // [m] altitude (from cross-calc. with the GPS)
+    Line[Len++]=',';
+    Len+=Format_SignDec(Line+Len, ClimbRate,   3, 2);                // [m/s] climb rate
+    Line[Len++]=',';
+    Len+=NMEA_AppendCheckCRNL(Line, Len);
+    xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
+    Format_String(CONS_UART_Write, Line, Len);                           // send NMEA sentence to the console (UART1)
+    xSemaphoreGive(CONS_Mutex);
 
-        Len=0;                                                           // start preparing the PGRMZ NMEA sentence
-        Len+=Format_String(Line+Len, "$PGRMZ,");
-        Len+=Format_SignDec(Line+Len, StdAltitude, 2, 1);                // [m] standard altitude (calc. from pressure)
-        Line[Len++]=',';
-        Len+=Format_String(Line+Len, "m,");                              // normally f for feet, but metres and m works with XcSoar
-        Len+=Format_String(Line+Len, "3");                               // 1 no fix, 2 - 2D, 3 - 3D; assume 3D for now
-        Len+=NMEA_AppendCheckCRNL(Line, Len);
-        xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
-        Format_String(CONS_UART_Write, Line, Len);                           // send NMEA sentence to the console (UART1)
-        xSemaphoreGive(CONS_Mutex);
+    Len=0;                                                           // start preparing the PGRMZ NMEA sentence
+    Len+=Format_String(Line+Len, "$PGRMZ,");
+    Len+=Format_SignDec(Line+Len, StdAltitude, 2, 1);                // [m] standard altitude (calc. from pressure)
+    Line[Len++]=',';
+    Len+=Format_String(Line+Len, "m,");                              // normally f for feet, but metres and m works with XcSoar
+    Len+=Format_String(Line+Len, "3");                               // 1 no fix, 2 - 2D, 3 - 3D; assume 3D for now
+    Len+=NMEA_AppendCheckCRNL(Line, Len);
+    xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
+    Format_String(CONS_UART_Write, Line, Len);                           // send NMEA sentence to the console (UART1)
+    xSemaphoreGive(CONS_Mutex);
 
 #ifdef WITH_SDLOG
-        xSemaphoreTake(Log_Mutex, portMAX_DELAY);
-        Format_String(Log_Write, Line, Len);                             // send NMEA sentence to the log file
-        xSemaphoreGive(Log_Mutex);
+    xSemaphoreTake(Log_Mutex, portMAX_DELAY);
+    Format_String(Log_Write, Line, Len);                             // send NMEA sentence to the log file
+    xSemaphoreGive(Log_Mutex);
 #endif
-      }
 
-    } else PipeCount=0;
 }
 
 #endif // WITH_BMP180/BMP280
@@ -209,9 +211,8 @@ void vTaskSENS(void* pvParameters)
 //   VarioSound(0);
 // #endif
 
-#ifdef WITH_BMP180
-  BaroPipe.Clear  (90000);
-  BaroNoise.Set(3*16);                 // guess the pressure noise level
+  BaroPipe.Clear  (4*90000);
+  BaroNoise.Set(12*16);                // guess the pressure noise level
 
                                        // initialize the GPS<->Baro correlator
   AltAver.Set(0);                      // [m] Altitude at sea level
@@ -219,7 +220,6 @@ void vTaskSENS(void* pvParameters)
   PressDelay.Clear(4*101300);
 
   bool Detected = InitBaro();
-#endif
 
   xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
   Format_String(CONS_UART_Write, "TaskSENS:");
@@ -241,7 +241,7 @@ void vTaskSENS(void* pvParameters)
 
   while(1)
   {
-#ifdef WITH_BMP180
+#if defined(WITH_BMP180) || defined(WITH_BMP280)
     ProcBaro();
 #else
     vTaskDelay(1000);
