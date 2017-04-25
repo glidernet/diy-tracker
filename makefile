@@ -11,7 +11,8 @@ TCHAIN = arm-none-eabi
 # list of optional features to be compiled in:
 # i2c1 ... I2C-1 interface
 # sdcard ... SD card interface with FAT filesystem
-# bmp180 ... barometric pressure bmp180 sensor (selects i2c1 too)
+# bmp180 ... barometric pressure bmp180 sensor
+# bmp280 ... barometric pressure bmp280 sensor
 # beeper ... beeper
 # vario ... vario sound (selects beeper)
 # sdlog ... logging to sdcard (selects sdcard too)
@@ -27,13 +28,13 @@ TCHAIN = arm-none-eabi
 # swap_uarts ... use UART1 for GPS and UART2 for console
 # ogn_cube_1 ... Tracker hardware by Miroslav Cervenka
 
-# WITH_OPTS = rfm69 beeper vario bmp180 knob  relay config pps_irq # for regular tracker with a knob and BMP180 but no SD card
-# WITH_OPTS = rfm69 beeper vario bmp180 sdlog relay config # for the test system (no knob but the SD card)
-WITH_OPTS = rfm69 beeper vario bmp180 relay config pps_irq gps_pps gps_enable
+# WITH_OPTS = rfm69 beeper vario i2c1 bmp180 knob  relay config pps_irq # for regular tracker with a knob and BMP180 but no SD card
+# WITH_OPTS = rfm69 beeper vario i2c1 bmp180 sdlog relay config # for the test system (no knob but the SD card)
+WITH_OPTS = rfm69 beeper vario i2c1 bmp180 relay config pps_irq gps_pps gps_enable
 # WITH_OPTS = rfm69 beeper relay config
-# WITH_OPTS = rfm95 beeper vario bmp180 relay config
+# WITH_OPTS = rfm95 beeper vario i2c1 bmp180 relay config
 
-# WITH_OPTS = rfm69 relay config swap_uarts ogn_cube_1 # for OGN-CUBE-1
+# WITH_OPTS = rfm69 relay config swap_uarts i2c2 bmp280 ogn_cube_1 # for OGN-CUBE-1
 
 # MCU = STM32F103C8  # STM32F103C8 for no-name STM32F1 board, STM32F103CB for Maple mini
 
@@ -84,12 +85,23 @@ WITH_DEFS =
 
 ifneq ($(findstring bmp180,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_BMP180
-  WITH_OPTS += i2c1
+  C_SRC += atmosphere.cpp
+endif
+
+ifneq ($(findstring bmp280,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_BMP280
   C_SRC += atmosphere.cpp
 endif
 
 ifneq ($(findstring i2c1,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_I2C1
+  WITH_DEFS += -DBARO_I2C=I2C1
+  C_SRC  += i2c.cpp
+endif
+
+ifneq ($(findstring i2c2,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_I2C2
+  WITH_DEFS += -DBARO_I2C=I2C2
   C_SRC  += i2c.cpp
 endif
 
@@ -164,8 +176,8 @@ else
 endif
 
 ifneq ($(findstring ogn_cube_1,$(WITH_OPTS)),)
-  WITH_DEFS += -DWITH_OGN_CUBE_1
   MCU = STM32F103CB
+  WITH_DEFS += -DWITH_OGN_CUBE_1
 else
   MCU = STM32F103C8
 endif

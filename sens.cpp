@@ -13,9 +13,16 @@
 
 #include "i2c.h"
 
-#ifdef WITH_BMP180
+#if defined(WITH_BMP180) || defined(WITH_BMP280)
 
+#ifdef WITH_BMP180
 #include "bmp180.h"
+#endif
+
+#ifdef WITH_BMP280
+#include "bmp280.h"
+#endif
+
 #include "atmosphere.h"
 #include "slope.h"
 #include "lowpass2.h"
@@ -46,7 +53,13 @@ void VarioSound(int32_t ClimbRate)
 }
 #endif // WITH_BEEPER
 
+#ifdef WITH_BMP180
 static BMP180   Baro;                       // BMP180 barometer sensor
+#endif
+
+#ifdef WITH_BMP280
+static BMP280   Baro;                       // BMP280 barometer sensor
+#endif
 
 static uint32_t AverPress;                  // [ Pa] summed Pressure over several readouts
 static uint8_t  AverCount;                  // [int] number of summed Pressure readouts
@@ -62,11 +75,17 @@ static Delay<int32_t, 8>        PressDelay; // 4-second delay for long-term clim
 static char Line[64];                       // line to prepare the barometer NMEA sentence
 
 static bool InitBaro()
-{ Baro.Bus=I2C1;
+{ Baro.Bus=BARO_I2C;
   uint8_t Err=Baro.CheckID();
   if(Err==0) Err=Baro.ReadCalib();
+#ifdef WITH_BMP180
   if(Err==0) Err=Baro.AcquireRawTemperature();
   if(Err==0) { Baro.CalcTemperature(); AverPress=0; AverCount=0; }
+#endif
+#ifdef WITH_BMP280
+  if(Err==0) Err=Baro.Acquire();
+  if(Err==0) { Baro.Calculate(); }
+#endif
   return Err==0; }
 
 static void ProcBaro()
@@ -79,6 +98,7 @@ static void ProcBaro()
               else { Sec+= 5; vTaskDelay( 500-Phase); }
     if(Sec>=600) Sec-=600;
 
+#ifdef WITH_BMP180
     TickType_t Start=xTaskGetTickCount();
     uint8_t Err=Baro.AcquireRawTemperature();                             // measure temperature
     if(Err==0) { Baro.CalcTemperature(); AverPress=0; AverCount=0; }      // clear the average
@@ -90,6 +110,11 @@ static void ProcBaro()
     { uint8_t Err=Baro.AcquireRawPressure();                              // take pressure measurement
       if(Err==0) { Baro.CalcPressure(); AverPress+=Baro.Pressure; AverCount++; } // sum-up average pressure
       TickType_t Time=xTaskGetTickCount()-Start; if(Time>=450) break; }   // but no longer than 450ms to fit into 0.5 second slot
+#endif
+#ifdef WITHBMP280
+    uint8_t Err=Baro.Acquire();
+    if(Err==0) { Baro.Calculate(); }
+#endif
 
     if(AverCount)                                                         // and we summed-up some measurements
     { AverPress = (AverPress+(AverCount>>1))/AverCount;                   // make the average
@@ -172,7 +197,9 @@ static void ProcBaro()
     } else PipeCount=0;
 }
 
-#endif // WITH_BMP
+#endif // WITH_BMP180/BMP280
+
+
 
 extern "C"
 void vTaskSENS(void* pvParameters)
@@ -196,11 +223,19 @@ void vTaskSENS(void* pvParameters)
 
   xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
   Format_String(CONS_UART_Write, "TaskSENS:");
+
 #ifdef WITH_BMP180
   Format_String(CONS_UART_Write, " BMP180: ");
   if(Detected) Format_String(CONS_UART_Write, " detected");
          else  Format_String(CONS_UART_Write, " not there !");
 #endif
+
+#ifdef WITH_BMP280
+  Format_String(CONS_UART_Write, " BM2180: ");
+  if(Detected) Format_String(CONS_UART_Write, " detected");
+         else  Format_String(CONS_UART_Write, " not there !");
+#endif
+
   Format_String(CONS_UART_Write, "\n");
   xSemaphoreGive(CONS_Mutex);
 
