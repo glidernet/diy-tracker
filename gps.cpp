@@ -213,7 +213,7 @@ static void GPS_BurstStart(void)                                           // wh
   // TickType_t TicksSincePPS=Burst_TickCount-PPS_TickCount;
   // if(TicksSincePPS>10500)
 #ifndef WITH_GPS_PPS
-  GPS_PPS_On(GPS_BurstDelay);
+  GPS_PPS_On(GPS_BurstDelay);                                              // if there is no PPS from GPS use the burst start to simulate the PPS with given delay.
 #endif
 }
 
@@ -248,10 +248,10 @@ static void GPS_BurstEnd(void)                                             // wh
   { if(GPS_TimeSinceLock) { GPS_LockEnd(); GPS_TimeSinceLock=0; }
   }
   uint8_t NextPosIdx = (PosIdx+1)&3;                                      // next position to be recorded
-  Position[NextPosIdx].Clear();
-  int8_t Sec = Position[PosIdx].Sec;
+  Position[NextPosIdx].Clear();                                           // clear the next position
+  int8_t Sec = Position[PosIdx].Sec;                                      //
   Sec++; if(Sec>=60) Sec=0;
-  Position[NextPosIdx].Sec=Sec;
+  Position[NextPosIdx].Sec=Sec;                                           // set the correct time for the next position
   // Position[NextPosIdx].copyTime(Position[PosIdx]);                        // copy time from current position
   // Position[NextPosIdx].incrTime();                                        // increment time by 1 sec
   PosIdx=NextPosIdx;                                                      // advance the index
@@ -303,8 +303,16 @@ static void GPS_UBX(void)                                                       
 //                    $PSRF100,1,57600,8,1,0*36
 //                    $PSRF100,1,115200,8,1,0*05
 
-static const char *SiRF_SetBaudrate_57600  = "$PSRF100,1,57600,8,1,0*36\r\n";
-static const char *SiRF_SetBaudrate_115200 = "$PSRF100,1,115200,8,1,0*05\r\n";
+// static const char *SiRF_SetBaudrate_57600  = "$PSRF100,1,57600,8,1,0*36\r\n";
+// static const char *SiRF_SetBaudrate_115200 = "$PSRF100,1,115200,8,1,0*05\r\n";
+
+
+// Baud setting for MTK GPS:
+// $PMTK251,38400*27<CR><LF>
+// $PMTK251,57600*2C<CR><LF>
+// $PMTK251,115200*1F<CR><LF>
+
+// static const char *MTK_SetBaudrate_115200 = "$PMTK251,115200*1F\r\n";
 
 // ----------------------------------------------------------------------------
 
@@ -334,7 +342,7 @@ void vTaskGPS(void* pvParameters)
   Format_String(CONS_UART_Write, "\n");
   xSemaphoreGive(CONS_Mutex);
 
-  // Format_String(GPS_UART_Write, SiRF_SetBaudrate_57600);
+  // Format_String(GPS_UART_Write, MTK_SetBaudrate_115200);
 
   int Burst=(-1);                                                         // GPS transmission ongoing or line is idle ?
   { int LineIdle=0;                                                       // counts idle time for the GPS data
