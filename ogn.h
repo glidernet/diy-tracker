@@ -452,7 +452,8 @@ class OGN_Packet           // Packet structure for the OGN tracker
    void setBaroAltDiff(int16_t AltDiff)
    { if(AltDiff<(-255)) AltDiff=(-255); else if(AltDiff>255) AltDiff=255;
      Position.BaroMSB = (AltDiff&0xFF00)==0; Position.BaroAltDiff=AltDiff&0xFF; }
-   void EncodeStdAltitude(int32_t StdAlt) { setBaroAltDiff(StdAlt-DecodeAltitude()); }
+   void EncodeStdAltitude(int32_t StdAlt) { setBaroAltDiff((StdAlt-DecodeAltitude())); }
+   int32_t DecodeStdAltitude(void) const { return (DecodeAltitude()+getBaroAltDiff()); }
 
    uint8_t  getFixQuality(void) const   { return Position.FixQuality; }        // 0 = no fix, 1 = GPS, 2 = diff. GPS, 3 = other
    void     setFixQuality(uint8_t Qual) { Position.FixQuality = Qual; }
@@ -1399,7 +1400,7 @@ class GPS_Position
      Packet.EncodeClimbRate(ClimbRate);
      Packet.EncodeTurnRate(TurnRate);
      Packet.EncodeAltitude((Altitude+5)/10);
-     if(hasBaro()) Packet.EncodeStdAltitude(StdAltitude);
+     if(hasBaro()) Packet.EncodeStdAltitude((StdAltitude+5)/10);
      // { int16_t AltDiff = (StdAltitude+5)/10-Packet.DecodeAltitude();;
        // if(AltDiff>127) AltDiff=127;
        // else if(AltDiff<(-127)) AltDiff=(-127);
