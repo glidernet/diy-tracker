@@ -296,7 +296,21 @@ static void GPS_UBX(void)                                                       
 
 // ----------------------------------------------------------------------------
 
+// Baud setting for SIRF GPS:
+//    9600/8/N/1      $PSRF100,1,9600,8,1,0*0D<cr><lf>
+//   19200/8/N/1      $PSRF100,1,19200,8,1,0*38<cr><lf>
+//   38400/8/N/1      $PSRF100,1,38400,8,1,0*3D<cr><lf>
+//                    $PSRF100,1,57600,8,1,0*36
+//                    $PSRF100,1,115200,8,1,0*05
+
+static const char *SiRF_SetBaudrate_57600  = "$PSRF100,1,57600,8,1,0*36\r\n";
+static const char *SiRF_SetBaudrate_115200 = "$PSRF100,1,115200,8,1,0*05\r\n";
+
 // ----------------------------------------------------------------------------
+
+static const uint8_t BaudRates=7;
+static       uint8_t BaudRateIdx=1;
+static const uint32_t BaudRate[BaudRates] = { 4800, 9600, 19200, 38400, 57600, 115200, 230400 } ;
 
 #ifdef __cplusplus
   extern "C"
@@ -320,8 +334,11 @@ void vTaskGPS(void* pvParameters)
   Format_String(CONS_UART_Write, "\n");
   xSemaphoreGive(CONS_Mutex);
 
+  // Format_String(GPS_UART_Write, SiRF_SetBaudrate_57600);
+
   int Burst=(-1);                                                         // GPS transmission ongoing or line is idle ?
   { int LineIdle=0;                                                       // counts idle time for the GPS data
+    int NoValidData=0;                                                    // count time without valid data (to decide to change baudrate)
     int PPS=0;
     NMEA.Clear(); UBX.Clear();                                            // scans GPS input for NMEA and UBX frames
     for(uint8_t Idx=0; Idx<4; Idx++)
@@ -339,11 +356,12 @@ void vTaskGPS(void* pvParameters)
       for( ; ; )
       { uint8_t Byte; int Err=GPS_UART_Read(Byte); if(Err<=0) break;        // get Byte from serial port
         LineIdle=0;                                                         // if there was a byte: restart idle counting
+        NoValidData++;
         NMEA.ProcessByte(Byte); UBX.ProcessByte(Byte);                      // process through the NMEA interpreter
         if(NMEA.isComplete())                                               // NMEA completely received ?
-        { if(NMEA.isChecked()) GPS_NMEA();                                  // NMEA check sum is correct ?
+        { if(NMEA.isChecked()) { GPS_NMEA(); NoValidData=0; }               // NMEA check sum is correct ?
           NMEA.Clear(); }
-        if(UBX.isComplete()) { GPS_UBX(); UBX.Clear(); }
+        if(UBX.isComplete()) { GPS_UBX(); NoValidData=0; UBX.Clear(); }
       }
 
       if(LineIdle==0)                                                        // if any bytes were received ?
@@ -356,7 +374,18 @@ void vTaskGPS(void* pvParameters)
 	{ }
         Burst=0;
       }
-
+#ifdef WITH_GPS_AUTOBAUD
+      if(NoValidData>1000)                                                   // decide to switch the baudrate
+      { BaudRateIdx++; if(BaudRateIdx>=BaudRates) BaudRateIdx=0;
+        uint32_t NewBaudRate = BaudRate[BaudRateIdx];
+        xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
+        Format_String(CONS_UART_Write, "TaskGPS: switch to ");
+        Format_UnsDec(CONS_UART_Write, NewBaudRate);
+        Format_String(CONS_UART_Write, "bps\n");
+        xSemaphoreGive(CONS_Mutex);
+        GPS_UART_SetBaudrate(NewBaudRate);
+        NoValidData=0; }
+#endif
     }
   }
 }

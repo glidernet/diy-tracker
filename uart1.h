@@ -12,6 +12,7 @@
 extern SemaphoreHandle_t UART1_Mutex;
 
 void UART1_Configuration (int BaudRate=115200);
+inline void UART1_SetBaudrate(int BaudRate=115200) { UART_ConfigUSART(USART1, BaudRate); }
 
 int  inline UART1_TxDone(void)    { return USART_GetFlagStatus(USART1, USART_FLAG_TC)   != RESET; }
 int  inline UART1_TxEmpty(void)   { return USART_GetFlagStatus(USART1, USART_FLAG_TXE)  != RESET; }

@@ -25,12 +25,13 @@ TCHAIN = arm-none-eabi
 # pps_irq .. PPS signal makes an IRQ and the RTOS clock is adjusted in frequency to mathc the GPS (but not very precise)
 # gps_pps ... GPS does deliver PPS, otherwise we get the timing from when the GPS starts sending serial data
 # gps_enable ... GPS senses the "enable" line so it is possibly to shut it down
+# gps_autobaud... GPS tries various baud rates until valid data is received
 # swap_uarts ... use UART1 for GPS and UART2 for console
 # ogn_cube_1 ... Tracker hardware by Miroslav Cervenka
 
 # WITH_OPTS = rfm69 beeper vario i2c1 bmp180 knob  relay config pps_irq # for regular tracker with a knob and BMP180 but no SD card
 # WITH_OPTS = rfm69 beeper vario i2c1 bmp180 sdlog relay config # for the test system (no knob but the SD card)
-WITH_OPTS = rfm69 beeper vario i2c1 bmp180 relay config pps_irq gps_pps gps_enable
+WITH_OPTS = rfm69 beeper vario i2c1 bmp180 relay config gps_pps gps_enable gps_autobaud pps_irq
 # WITH_OPTS = rfm69 beeper relay config
 # WITH_OPTS = rfm95 beeper vario i2c1 bmp180 relay config
 
@@ -160,6 +161,10 @@ endif
 
 ifneq ($(findstring gps_enable,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_GPS_ENABLE
+endif
+
+ifneq ($(findstring gps_autobaud,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_GPS_AUTOBAUD
 endif
 
 ifneq ($(findstring swap_uarts,$(WITH_OPTS)),)
