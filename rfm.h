@@ -234,11 +234,11 @@ class RFM_TRX
 
 #ifdef WITH_RFM69
    void WriteSYNC(uint8_t WriteSize, uint8_t SyncTol, const uint8_t *SyncData)
-   { if(SyncTol>7) SyncTol=7;
-     if(WriteSize>8) WriteSize=8;
+   { if(SyncTol>7) SyncTol=7;                                                // no more than 7 bit errors can be tolerated on SYNC
+     if(WriteSize>8) WriteSize=8;                                            // up to 8 bytes of SYNC can be programmed
      WriteBytes(SyncData+(8-WriteSize), WriteSize, REG_SYNCVALUE1);          // write the SYNC, skip some initial bytes
-     WriteByte(  0x80 | ((WriteSize-1)<<3) | SyncTol, REG_SYNCCONFIG);       // write SYNC length [bytes]
-     WriteWord( 9-WriteSize, REG_PREAMBLEMSB); }                             // write preamble length [bytes] (page 71)
+     WriteByte(  0x80 | ((WriteSize-1)<<3) | SyncTol, REG_SYNCCONFIG);       // write SYNC length [bytes] and tolerance to errors [bits]
+     WriteWord( 8-WriteSize, REG_PREAMBLEMSB); }                             // write preamble length [bytes] (page 71)
 //              ^ 8 or 9 ?
 #endif
 
@@ -258,7 +258,7 @@ class RFM_TRX
 
    uint16_t ReadIrqFlags(void) { return ReadWord(REG_IRQFLAGS1); }
 
-   void ClearIrqFlags(void)    const { WriteWord(RF_IRQ_FifoOverrun | RF_IRQ_Rssi, REG_IRQFLAGS1); }
+   void ClearIrqFlags(void)    { WriteWord(RF_IRQ_FifoOverrun | RF_IRQ_Rssi, REG_IRQFLAGS1); }
 
 #ifdef WITH_RFM69
    void WriteTxPower_W(int8_t TxPower=10) const // [dBm] for RFM69W: -18..+13dBm
@@ -325,12 +325,12 @@ class RFM_TRX
 #ifdef WITH_RFM95
 
    void WriteTxPower(int8_t TxPower=0)
-   { if(TxPower<0) TxPower=0;
+   { if(TxPower<2) TxPower=2;
      else if(TxPower>17) TxPower=17;
-     if(TxPower<=14)
-     { WriteByte(0x70 | TxPower    , REG_PACONFIG);
-     }
-     else
+     // if(TxPower<=14)
+     // { WriteByte(0x70 | TxPower    , REG_PACONFIG);
+     // }
+     // else
      { WriteByte(0xF0 | (TxPower-2), REG_PACONFIG);
      }
    }
