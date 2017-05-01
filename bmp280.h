@@ -80,18 +80,17 @@ class BMP280
   { Error=I2C_Read(Bus, ADDR, REG_CALIB, (uint8_t *)(&T1), 26);
     return Error; }
 
-  uint8_t ReadBusy(void) // check if temperature and pressure conversion is done
+  uint8_t ReadReady(void) // check if temperature and pressure conversion is done
   { uint8_t Status;
     Error=I2C_Read(Bus, ADDR, REG_STATUS, Status); if(Error) return Error;
-    return (Status&0x09)==0; } // 1 = busy, 0 => ready
+    return (Status&0x09)==0; } // 1 = ready, 0 => busy
 
-  uint8_t WaitReady(uint8_t Timeout=20, uint8_t Wait=30) // wait for the conversion to be ready
+  uint8_t WaitReady(uint8_t Timeout=50, uint8_t Wait=30) // wait for the conversion to be ready
   { vTaskDelay(Wait);
     for(; Timeout; Timeout--)
-    { uint8_t Err=ReadBusy(); if(Err>1) return Err;
-      if(Err==0) return 0;
+    { uint8_t Err=ReadReady(); if(Err) return Err; // 1 is ready, >1 is an I2C bus error
       vTaskDelay(1); }
-    return 0xFF; }
+    return 0xFF; }            // return "timeout" error
 
   uint8_t Trigger(void)                                    // start a temperature+pressure measurement
   { uint8_t Data=0x00; Error=I2C_Write(Bus, ADDR, REG_CONFIG, Data); if(Error) return Error;
@@ -113,7 +112,7 @@ class BMP280
 
   uint8_t Acquire(void)
   { if(Trigger()) return Error;
-    if(WaitReady()) return Error;
+    if(WaitReady()!=1) return Error;
     if(ReadRawTemp()) return Error;
     return ReadRawPress(); }
 

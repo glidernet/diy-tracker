@@ -114,11 +114,11 @@ static void ProcBaro()
     if(AverCount==0) { PipeCount=0; return ; }                          // and we summed-up some measurements
     AverPress = ( (AverPress<<2) + (AverCount>>1) )/AverCount;          // [0.25Pa]] make the average
 #endif
-#ifdef WITHBMP280
+#ifdef WITH_BMP280
     uint8_t Err=Baro.Acquire();
     if(Err==0) { Baro.Calculate(); }
           else { PipeCount=0; return; }
-    AverPress = Baro.Pressure;
+    AverPress = Baro.Pressure;                                          // [0.25Pa]
 #endif
 
     BaroPipe.Input(AverPress);                                          // [0.25Pa]
