@@ -310,14 +310,19 @@ class OGN_Packet           // Packet structure for the OGN tracker
 
 #endif // __AVR__
 
-   int calcDistanceVector(int32_t &LatDist, int32_t &LonDist, int32_t RefLat, int32_t RefLon, uint16_t LatCos=0x3000, int32_t MaxDist=0x7FFF)
-   { LatDist = ((DecodeLatitude()-RefLat)*1517+0x1000)>>13;
+   int calcDistanceVector(int32_t &LatDist, int32_t &LonDist, int32_t RefLat, int32_t RefLon, uint16_t LatCos=3000, int32_t MaxDist=0x7FFF)
+   { LatDist = ((DecodeLatitude()-RefLat)*1517+0x1000)>>13;           // convert from 1/600000deg to meters (40000000m = 360deg) => x 5/27 = 1517/(1<<13)
      if(abs(LatDist)>MaxDist) return -1;
      LonDist = ((DecodeLongitude()-RefLon)*1517+0x1000)>>13;
      if(abs(LonDist)>(4*MaxDist)) return -1;
              LonDist = (LonDist*LatCos+0x800)>>12;
      if(abs(LonDist)>MaxDist) return -1;
      return 1; }
+
+   void setDistanceVector(int32_t LatDist, int32_t LonDist, int32_t RefLat, int32_t RefLon, uint16_t LatCos=3000)
+   { EncodeLatitude(RefLat+(LatDist*27)/5);
+     LonDist = (LonDist<<12)/LatCos;                                  // LonDist/=cosine(Latitude)
+     EncodeLongitude(RefLon+(LonDist*27)/5); }
 
    // uint8_t WritePFLAA(char *NMEA, GPS_Position &Position)
    // { return  WritePFLAA(NMEA, Position.Latitude, Position.Longitude, (Position.Altitude+5)/10, Position.LatitudeCosine); }
@@ -905,40 +910,6 @@ class OGN_RxPacket                                        // OGN packet with FEC
      NMEA[Len]=0;
      return Len; }
 
-/* moved to OGN_Packet
-   uint8_t WritePFLAA(char *NMEA, int32_t RefLat, int32_t RefLon, int32_t RefAlt, uint16_t LatCos, int32_t MaxDist=50000)
-   { uint8_t Len=0;
-     int32_t LatDist = ((int64_t)(Packet.DecodeLatitude()-RefLat)*0x2f684bda+0x80000000)>>32; // relative distance along latitude
-     if(abs(LatDist)>MaxDist) return Len;
-     int32_t LonDist = ((int64_t)(Packet.DecodeLongitude()-RefLon)*0x2f684bda+0x80000000)>>32; // relatice distnace along longitude
-             LonDist = ((int64_t)LonDist*LatCos+0x2000)>>12;
-     if(abs(LonDist)>MaxDist) return Len;
-     Len+=Format_String(NMEA+Len, "$PFLAA,0,");                    // sentence name and alarm-level (but no alarms for trackers)
-     Len+=Format_SignDec(NMEA+Len, LatDist);
-     NMEA[Len++]=',';
-     Len+=Format_SignDec(NMEA+Len, LonDist);
-     NMEA[Len++]=',';
-     Len+=Format_SignDec(NMEA+Len, Packet.DecodeAltitude()-RefAlt);       // [m] relative altitude
-     NMEA[Len++]=',';
-     NMEA[Len++]='0'+Packet.getAddrType();                                // address-type (3=OGN)
-     NMEA[Len++]=',';
-     uint32_t Addr = Packet.getAddress();                                 // [24-bit] address
-     Len+=Format_Hex(NMEA+Len, (uint8_t)(Addr>>16));               // XXXXXX 24-bit address: RND, ICAO, FLARM, OGN
-     Len+=Format_Hex(NMEA+Len, (uint16_t)Addr);
-     NMEA[Len++]=',';
-     Len+=Format_UnsDec(NMEA+Len, Packet.DecodeHeading(), 4, 1);          // [deg] heading (by GPS)
-     NMEA[Len++]=',';
-     Len+=Format_SignDec(NMEA+Len, Packet.DecodeTurnRate(), 2, 1);        // [deg/sec] turn rate
-     NMEA[Len++]=',';
-     Len+=Format_UnsDec(NMEA+Len, Packet.DecodeSpeed(), 2, 1);            // [approx. m/s] ground speed
-     NMEA[Len++]=',';
-     Len+=Format_SignDec(NMEA+Len, Packet.DecodeClimbRate(), 2, 1);       // [m/s] climb/sink rate
-     NMEA[Len++]=',';
-     NMEA[Len++]=HexDigit(Packet.getAcftType());                          // [0..F] aircraft-type: 1=glider, 2=tow plane, etc.
-     Len+=NMEA_AppendCheckCRNL(NMEA, Len);
-     NMEA[Len]=0;
-     return Len; }
-*/
    uint8_t Print(char *Out)
    { uint8_t Len=0;
      Out[Len++]=HexDigit(Packet.getAcftType()); Out[Len++]=':';

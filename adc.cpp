@@ -25,10 +25,18 @@ void ADC_Configuration(void)
   ADC_StartCalibration(ADC1);                                           // Start ADC1 calibaration
   while(ADC_GetCalibrationStatus(ADC1));                                // Check the end of ADC1 calibration
   ADC_TempSensorVrefintCmd(ENABLE);                                     // enable Vrefint and Temperature sensor
+
 #ifdef WITH_KNOB
   GPIO_InitTypeDef  GPIO_InitStructure;
   GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_0;                           // Pin #0
-  GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_AIN;                        // as analog input
+  GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_AIN;                        // as analog input (knob)
+  GPIO_Init(GPIOB, &GPIO_InitStructure);                                // for Port B
+#endif
+
+#ifdef WITH_BAT_SENSE
+  GPIO_InitTypeDef  GPIO_InitStructure;
+  GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_1;                           // Pin #1
+  GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_AIN;                        // as analog input (battery voltage sense)
   GPIO_Init(GPIOB, &GPIO_InitStructure);                                // for Port B
 #endif
 }

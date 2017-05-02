@@ -24,8 +24,13 @@ inline uint8_t NMEA_AppendCheckCRNL(char *NMEA, uint8_t Len) { return NMEA_Appen
    void Clear(void)                          // Clear the frame: discard all data, ready for next message
      { State=0; Len=0; Parms=0; }
 
+   void Send(void (*SendByte)(char) ) const
+   { for(uint8_t Idx=0; Idx<Len; Idx++)
+     { (*SendByte)(Data[Idx]); }
+     (*SendByte)('\r'); (*SendByte)('\n'); }
+
    void ProcessByte(uint8_t Byte)            // pass all bytes through this call and it will build the frame
-     { 
+     {
        if(isComplete()) return;              // if already a complete frame, ignore extra bytes
        if(Len==0)                            // if data is empty
        { if(Byte!='$') return;               // then ignore all bytes but '$'
@@ -153,6 +158,9 @@ inline uint8_t NMEA_AppendCheckCRNL(char *NMEA, uint8_t Len) { return NMEA_Appen
        if(Data[3]!='T') return 0;
        if(Data[4]!='X') return 0;
        return Data[5]=='T'; }
+
+   uint8_t isP(void) const
+   { return Data[1]=='P'; }
 
    uint8_t isPOGN(void) const                    // OGN dedicated NMEA sentence
      { if(Data[1]!='P') return 0;
