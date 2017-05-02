@@ -118,7 +118,11 @@ static void ProcBaro()
     uint8_t Err=Baro.Acquire();
     if(Err==0) { Baro.Calculate(); }
           else { PipeCount=0; return; }
+            Err=Baro.Acquire();
     AverPress = Baro.Pressure;                                          // [0.25Pa]
+    if(Err==0) { Baro.Calculate(); }
+          else { PipeCount=0; return; }
+    AverPress = (Baro.Pressure+AverPress)/2;                            // [0.25Pa]
 #endif
 
     BaroPipe.Input(AverPress);                                          // [0.25Pa]
