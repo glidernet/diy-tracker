@@ -218,7 +218,7 @@ static void GPS_BurstStart(void)                                           // wh
 }
 
 static void GPS_BurstEnd(void)                                             // when GPS stops sending data on the serial port
-{ if(Position[PosIdx].isComplete())                                        // position data complete
+{ if(Position[PosIdx].Complete)                                        // position data complete
   { if(Position[PosIdx].isTimeValid())
     { GPS_Sec=Position[PosIdx].Sec;                                        // get the second - this is important for time in the OGN packets
       if(Position[PosIdx].isDateValid())
@@ -260,10 +260,10 @@ static void GPS_BurstEnd(void)                                             // wh
 GPS_Position *GPS_getPosition(void)
 { uint8_t PrevIdx=PosIdx;
   GPS_Position *PrevPos = Position+PrevIdx;
-  if(PrevPos->isComplete()) return PrevPos;
+  if(PrevPos->Complete) return PrevPos;
   PrevIdx=(PrevIdx+3)&3;
   PrevPos = Position+PrevIdx;
-  if(PrevPos->isComplete()) return PrevPos;
+  if(PrevPos->Complete) return PrevPos;
   return 0; }
 
 GPS_Position *GPS_getPosition(int8_t Sec)

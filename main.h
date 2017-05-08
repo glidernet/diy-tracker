@@ -15,6 +15,7 @@ uint8_t Play_Busy(void);
 #include "uart2.h"
 
 extern SemaphoreHandle_t CONS_Mutex; // console port Mutex
+extern SemaphoreHandle_t ADC1_Mutex; // ADC1 Mutex for knob and other access to ADC
 
 // here we can tell which UART is to be used for consolse and which for the GPS
 #ifdef WITH_SWAP_UARTS  // OGN-CUBE-1: Console=UART2, GPS=UART1
