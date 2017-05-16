@@ -679,7 +679,7 @@ void vTaskRF(void* pvParameters)
     TimeSlot(TxChan, 400, Packet,   RX_Rssi, 0, TxTime);
 
     TRX.WriteMode(RF_OPMODE_STANDBY);
-    vTaskDelay(1);                                                             // do we need a delay here ?
+    // vTaskDelay(1);                                                             // do we need a delay here ?
     TxChan = RF_FreqPlan.getChannel(RX_UnixTime, 1, 1);                        // transmit channel
     RX_Channel = TxChan;                                                       // listen channel
     SetRxChannel();
