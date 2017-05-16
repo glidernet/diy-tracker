@@ -212,6 +212,7 @@ void vTaskSENS(void* pvParameters)
 //   VarioSound(0);
 // #endif
 
+#if defined(WITH_BMP180) || defined(WITH_BMP280)
   BaroPipe.Clear  (4*90000);
   BaroNoise.Set(12*16);                // guess the pressure noise level
 
@@ -221,6 +222,7 @@ void vTaskSENS(void* pvParameters)
   PressDelay.Clear(4*101300);
 
   bool Detected = InitBaro();
+#endif // WITH_BMP180/BMP280
 
   xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
   Format_String(CONS_UART_Write, "TaskSENS:");
