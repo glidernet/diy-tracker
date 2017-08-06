@@ -16,7 +16,8 @@ TCHAIN = arm-none-eabi
 # beeper ... beeper
 # vario ... vario sound (selects beeper)
 # sdlog ... logging to sdcard (selects sdcard too)
-# knob ... user knob to set volume and options
+# knob ... user knob to set volume and options on PB0
+# bat_sense ... measure battery voltage with R-R divider to pin PB1
 # config ... setting the aircraft-type, address-type, address, etc. through the serial port
 # rfm69
 # rfm69w ... for the lower tx power RF chip
@@ -26,12 +27,15 @@ TCHAIN = arm-none-eabi
 # gps_pps ... GPS does deliver PPS, otherwise we get the timing from when the GPS starts sending serial data
 # gps_enable ... GPS senses the "enable" line so it is possibly to shut it down
 # gps_autobaud... GPS tries various baud rates until valid data is received
+# gps_ubx_pass... pass UBX messages between the console and the GPS - for GPS configuration
+# gps_nmea_pass... pass (P-private) NMEA messages between the console and the GPS - for GPS configuration
+
 # swap_uarts ... use UART1 for GPS and UART2 for console
 # ogn_cube_1 ... Tracker hardware by Miroslav Cervenka
 
 # WITH_OPTS = rfm69 beeper vario i2c1 bmp180 knob  relay config pps_irq # for regular tracker with a knob and BMP180 but no SD card
 # WITH_OPTS = rfm69 beeper vario i2c1 bmp180 sdlog relay config # for the test system (no knob but the SD card)
-WITH_OPTS = rfm69 beeper vario i2c1 bmp180 relay config gps_pps gps_enable gps_autobaud pps_irq
+WITH_OPTS = rfm69 beeper vario i2c1 bmp180 relay config gps_pps gps_enable gps_autobaud gps_ubx_pass gps_nmea_pass pps_irq
 # WITH_OPTS = rfm69 beeper relay config
 # WITH_OPTS = rfm95 beeper vario i2c1 bmp180 relay config
 
@@ -132,6 +136,10 @@ ifneq ($(findstring knob,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_KNOB
 endif
 
+ifneq ($(findstring bat_sense,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_BAT_SENSE
+endif
+
 ifneq ($(findstring config,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_CONFIG
 endif
@@ -165,6 +173,14 @@ endif
 
 ifneq ($(findstring gps_autobaud,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_GPS_AUTOBAUD
+endif
+
+ifneq ($(findstring gps_ubx_pass,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_GPS_UBX_PASS
+endif
+
+ifneq ($(findstring gps_nmea_pass,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_GPS_NMEA_PASS
 endif
 
 ifneq ($(findstring swap_uarts,$(WITH_OPTS)),)

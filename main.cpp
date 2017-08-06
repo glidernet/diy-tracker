@@ -43,6 +43,7 @@
 #include "knob.h"                    // KNOB task: read user knob
 
 SemaphoreHandle_t CONS_Mutex; // console port Mutex
+SemaphoreHandle_t ADC1_Mutex; // ADC1 Mutex for Knob, temperature/voltage readout, etc.
 
 FlashParameters Parameters; // parameters to be stored in Flash, on the last page
 
@@ -105,7 +106,7 @@ FlashParameters Parameters; // parameters to be stored in Flash, on the last pag
 // RF  -> SPI1.MISO PA 6     PA15
 // RF  <- SPI1.MOSI PA 7     PA12 TIM1.ETR <-> USB
 // POT -> TIM3.CH3  PB 0     PA11 TIM1.CH4 <-> USB
-//        TIM3.CH4  PB 1     PA10 USART1.Rx <- Console/BT
+// BAT -> TIM3.CH4  PB 1     PA10 USART1.Rx <- Console/BT
 // BT  <- USART3.Tx PB10     PA 9 USART1.Tx -> Console/BT
 // BT  -> USART3.Rx PB11     PA 8 TIM1.CH1
 //                 RESET     PB15 SPI2.MOSI -> SD card
@@ -410,7 +411,10 @@ void prvSetupHardware(void)
 
   SPI1_Configuration();                    // SPI1 for the RF chip
   RFM_GPIO_Configuration();                // RFM69(H)W Reset/DIO0/...
+
   ADC_Configuration();                     // to measure Vref and CPU temp.
+  ADC1_Mutex = xSemaphoreCreateMutex();
+
   LED_Configuration();
 
 #ifdef WITH_BEEPER

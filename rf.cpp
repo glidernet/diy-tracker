@@ -25,7 +25,7 @@
 #include "fifo.h"
 
 #include "uart1.h"                         // console UART
-// #include "adc.h"
+#include "adc.h"
 
 #include "ogn.h"                           // OGN packet
 
@@ -155,7 +155,7 @@ static OGN_PrioQueue<16> RelayQueue;  // received packets and candidates to be r
 static OGN_RxPacket      RelayPacket; // received packet to be re-transmitted
 static LDPC_Decoder      Decoder;     // error corrector for the OGN Gallager code
 
-static uint8_t TX_Credit  =0;     // counts transmitted packets vs. time to avoid using more than 1% of the time
+static uint16_t TX_Credit  =0;        // counts transmitted packets vs. time to avoid using more than 1% of the time
 
 static uint8_t RX_OGN_Packets=0;      // [packets] counts received packets
 static uint8_t RX_Idle   =0;      // [sec]     time the receiver did not get any packets
@@ -379,22 +379,22 @@ static void TimeSlot(uint8_t TxChan, uint32_t SlotLen, uint8_t *PacketByte, uint
 */
 
 static void TimeSlot(uint8_t TxChan, uint32_t SlotLen, uint8_t *PacketByte, uint8_t Rx_RSSI, uint8_t MaxWait=8, uint32_t TxTime=0)
-{ TickType_t Start = xTaskGetTickCount();
-  TickType_t End   = Start + SlotLen;
-  uint32_t MaxTxTime = SlotLen-10-MaxWait;
-  if( (TxTime==0) || (TxTime>=MaxTxTime) ) TxTime = RX_Random%MaxTxTime;
-  TickType_t Tx    = Start + TxTime;
-  ReceiveUntil(Tx);
+{ TickType_t Start = xTaskGetTickCount();                                  // when the slot started
+  TickType_t End   = Start + SlotLen;                                      // when should it end
+  uint32_t MaxTxTime = SlotLen-8-MaxWait;                                  // time limit when transmision could start
+  if( (TxTime==0) || (TxTime>=MaxTxTime) ) TxTime = RX_Random%MaxTxTime;   // if TxTime out of limits, setup a random TxTime
+  TickType_t Tx    = Start + TxTime;                                       // Tx = the moment to start transmission
+  ReceiveUntil(Tx);                                                        // listen until this time comes
   if( (TX_Credit) && (PacketByte) )                                        // when packet to transmit is given and there is still TX credit left:
     TX_Credit-=Transmit(TxChan, PacketByte, Rx_RSSI, MaxWait);             // attempt to transmit the packet
-  ReceiveUntil(End);
+  ReceiveUntil(End);                                                       // listen till the end of the time-slot
 }
 
 // static void TimeSlot(uint8_t TxChan, uint32_t Len, OGN_Packet &Packet, uint8_t Rx_RSSI, uint8_t MaxWait=8)
 // { TimeSlot(TxChan, Len, Packet.isReady() ? Packet.Byte:0, Rx_RSSI, MaxWait); }
 
-static void TimeSlot(uint8_t TxChan, uint32_t SlotLen, OGN_RxPacket &Packet, uint8_t Rx_RSSI, uint8_t MaxWait=8, uint32_t TxTime=0)
-{ TimeSlot(TxChan, SlotLen, Packet.isReady() ? Packet.Packet.Byte():0, Rx_RSSI, MaxWait, TxTime); }
+// static void TimeSlot(uint8_t TxChan, uint32_t SlotLen, OGN_RxPacket &Packet, uint8_t Rx_RSSI, uint8_t MaxWait=8, uint32_t TxTime=0)
+// { TimeSlot(TxChan, SlotLen, Packet.isReady() ? Packet.Packet.Byte():0, Rx_RSSI, MaxWait, TxTime); }
 
 static void SetFreqPlan(void)
 { TRX.setBaseFrequency(RF_FreqPlan.BaseFreq);                // set the base frequency (recalculate to RFM69 internal synth. units)
@@ -450,6 +450,7 @@ void vTaskRF(void* pvParameters)
   RF_FreqPlan.setPlan(0);                  // 1 = Europe/Africa, 2 = USA/CA, 3 = Australia and South America
 
   OGN_RxPacket CurrPosPacket;              // should be OGN_Packet but we need to resolve the use of setReady()
+  OGN_RxPacket CurrStatPacket;             // status report packet
 #ifdef WITH_PPM
   OGN_PPM_Packet PPM_Packet;               // pulse-position-modulation apcket for long range reception
 #endif
@@ -493,6 +494,8 @@ void vTaskRF(void* pvParameters)
   {
 
     TimeSinceNoPos++; if(TimeSinceNoPos==0) TimeSinceNoPos--;
+    // if(GPS_TimeSinceLock>4)
+    // { }
     if(GPS_TimeSinceLock>2)                                                    // if GPS lock is already there for more than 2 seconds
     { GPS_Position *Position = GPS_getPosition();                              // get the most recent valid GPS position
       RF_FreqPlan.setPlan(Position->Latitude, Position->Longitude);            // set the frequency plan according to the GPS position
@@ -502,6 +505,7 @@ void vTaskRF(void* pvParameters)
         GPS_Position *RefPos = GPS_getPosition(Sec);                           // reference position 2 seconds ago (or just 1 second ?)
         if(RefPos && RefPos->Complete && RefPos->isValid() )                   // reference position must be complete and valid
         { Position->calcDifferences(*RefPos);                                  // calculate the differentials
+          CurrPosPacket.Packet.HeaderWord=0;
           CurrPosPacket.Packet.Header.Address  = Parameters.getAddress();               // set address
           CurrPosPacket.Packet.Header.AddrType = Parameters.getAddrType();              // address-type
           CurrPosPacket.Packet.Header.Emergency=0; CurrPosPacket.Packet.Header.Encrypted=0; CurrPosPacket.Packet.Header.RelayCount=0;
@@ -511,6 +515,9 @@ void vTaskRF(void* pvParameters)
           CurrPosPacket.Packet.Position.AcftType = Parameters.getAcftType();             // aircraft-type
           CurrPosPacket.Packet.Whiten(); CurrPosPacket.calcFEC();                        // whiten and calculate FEC code
           CurrPosPacket.setReady();                                                      // mark packet as ready to go
+          CurrStatPacket.Packet.HeaderWord=CurrPosPacket.Packet.HeaderWord;
+          CurrStatPacket.Packet.Header.Other=1;
+          Position->EncodeStatus(CurrStatPacket.Packet);
           TimeSinceNoPos=0;
         }
       }
@@ -522,6 +529,7 @@ void vTaskRF(void* pvParameters)
         CurrPosPacket.Packet.Whiten();
         CurrPosPacket.calcFEC(); }
     }                                                                          // we should invalidate position after some time
+
 #ifdef WITH_PPM
     if(CurrPosPacket.isReady() && ((GPS_Sec==0) || (GPS_Sec==30)) )
     { CurrPosPacket.Packet.Dewhiten();
@@ -555,7 +563,7 @@ void vTaskRF(void* pvParameters)
     { StartRFchip();                                                           // reset and rewrite the RF chip config
       RX_Idle=0; }
 
-    uint8_t TxSlotIdx=GPS_Sec%15;
+    // uint8_t TxSlotIdx=GPS_Sec%15;
     // uint8_t TxSlot0 = CurrPosPacket.Packet.getTxSlot(Idx  );
     // uint8_t TxSLot1 = CurrPosPacket.Packet.getTxSlot(Idx+1);
 
@@ -566,8 +574,23 @@ void vTaskRF(void* pvParameters)
     vTaskDelay(1); // while(TRX.RunningTemp()) taskYIELD();                    // wait for conversion to be ready
     int8_t ChipTemp= 165-TRX.ReadTemp();                                       // read RF chip temperature
 
-    // uint16_t MCU_Temp = ADC1_Read(ADC_Channel_TempSensor);                  // now the knob acquisition took over the ADC
-    // uint16_t MCU_Vref = ADC1_Read(ADC_Channel_Vrefint);
+    xSemaphoreTake(ADC1_Mutex, portMAX_DELAY);
+    uint16_t MCU_Vtemp = ADC1_Read(ADC_Channel_TempSensor);                    // T = 25+(V25-Vtemp)/Avg_Slope; V25=1.43+/-0.1V, Avg_Slope=4.3+/-0.3mV/degC
+    uint16_t MCU_Vref  = ADC1_Read(ADC_Channel_Vrefint);                       // VDD = 1.2*4096/Vref
+             MCU_Vtemp += ADC1_Read(ADC_Channel_TempSensor);                   // measure again and average
+             MCU_Vref  += ADC1_Read(ADC_Channel_Vrefint);
+    xSemaphoreGive(ADC1_Mutex);
+    int16_t MCU_Temp = -999;
+    if(MCU_Vref)
+    { MCU_Temp = 250 + ( ( ( (int32_t)1430 - ((int32_t)1200*(int32_t)MCU_Vtemp+(MCU_Vref>>1))/MCU_Vref )*(int32_t)37 +8 )>>4); // [0.1degC]
+      MCU_Vref = ( ((uint32_t)240<<12)+(MCU_Vref>>1))/MCU_Vref; }              // [0.01V]
+    CurrStatPacket.Packet.EncodeVoltage(((MCU_Vref<<4)+12)/25)  ;              // [1/64V]  write supply voltage to the status packet
+    CurrStatPacket.Packet.Status.RadioNoise = RX_Rssi;                         // [-0.5dBm] write radio noise to the status packet
+    if(CurrStatPacket.Packet.Status.Pressure==0) CurrStatPacket.Packet.EncodeTemperature(MCU_Temp);
+    CurrStatPacket.Packet.Status.TxPower = Parameters.getTxPower()-4;
+    uint16_t RxRate = RX_OGN_Count64+1;
+    uint8_t RxRateLog2=0; RxRate>>=1; while(RxRate) { RxRate>>=1; RxRateLog2++; }
+    CurrStatPacket.Packet.Status.RxRate = RxRateLog2;
 
     uint8_t Time=GPS_Sec+30; if(Time>=60) Time-=60;
     RelayQueue.cleanTime(Time);                                                // clean relay queue past 30 seconds
@@ -576,8 +599,7 @@ void vTaskRF(void* pvParameters)
     RX_OGN_Count64 -= RX_OGN_CountDelay.Input(RX_OGN_Packets);                 // subtract packets received 64 seconds ago
 
     { uint8_t Len=0;
-      // memcpy(Line+Len, "$POGNR,", 7); Len+=7;                               // prepare NMEA of status report
-      Len+=Format_String(Line+Len, "$POGNR,");
+      Len+=Format_String(Line+Len, "$POGNR,");                                 // NMEA report: radio status
       Len+=Format_UnsDec(Line+Len, RF_FreqPlan.Plan);                          // which frequency plan
       Line[Len++]=',';
       Len+=Format_UnsDec(Line+Len, RX_OGN_Count64);                            // number of OGN packets received
@@ -586,13 +608,15 @@ void vTaskRF(void* pvParameters)
       Line[Len++]=',';
       Len+=Format_SignDec(Line+Len, -5*RX_Rssi, 2, 1);                         // average RF level (over all channels)
       Line[Len++]=',';
-      Len+=Format_SignDec(Line+Len, (int16_t)ChipTemp);                        // the temperature of the RF chip
-      Line[Len++]=',';
-      // Len+=Format_UnsDec(Line+Len, MCU_Temp);
-      // Line[Len++]=',';
-      // Len+=Format_UnsDec(Line+Len, MCU_Vref);
-      // Line[Len++]=',';
       Len+=Format_UnsDec(Line+Len, (uint16_t)TX_Credit);
+      Line[Len++]=',';
+      Len+=Format_SignDec(Line+Len, (int16_t)ChipTemp);                        // the temperature of the RF chip
+      if(MCU_Vref)
+      { Line[Len++]=',';
+        Len+=Format_SignDec(Line+Len, MCU_Temp, 2, 1);
+        Line[Len++]=',';
+        Len+=Format_UnsDec(Line+Len, MCU_Vref, 3, 2); }
+
       Len+=NMEA_AppendCheckCRNL(Line, Len);                                    // append NMEA check-sum and CR+NL
       // LogLine(Line);
       xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
@@ -631,9 +655,15 @@ void vTaskRF(void* pvParameters)
     } while(PPS_Phase()<400);                                                  // keep going until 400 ms after PPS
     RX_RSSI.Process(RxRssiSum/RxRssiCount);                                    // [-0.5dBm] average noise on channel
 
-    TX_Credit++; if(!TX_Credit) TX_Credit--;
+    TX_Credit+=2; if(TX_Credit>7200) TX_Credit=7200;                           // count the transmission credit
 
     XorShift32(RX_Random);
+
+    uint32_t Seed = GPS_UnixTime ^ CurrStatPacket.Packet.HeaderWord;
+    XorShift32(Seed);
+    XorShift32(Seed);
+    uint8_t StatSlot  = (Seed&0x1F) == 0x00;
+    if(StatSlot) { CurrStatPacket.Packet.Whiten(); CurrStatPacket.calcFEC(); }
 
     uint8_t RelaySlot = GPS_UnixTime&1;                                        // relay
     uint8_t RelayReady = (RelayQueue.Sum>0) && ((RX_Random&0x80)==0);          // any packets for relaying ?
@@ -641,27 +671,34 @@ void vTaskRF(void* pvParameters)
     if(RelayReady) GetRelayPacket();                                           // get ready the packet to be relayed (if any)
              else  RelayPacket.clrReady();
 
-    TX_Credit++; if(!TX_Credit) TX_Credit--;                                   // new half-slot => increment the transmission credit
-
     uint32_t TxTime = (RX_Random&0x3F)+1; TxTime*=6;
-    if(RelaySlot && RelayReady) TimeSlot(TxChan, 400, RelayPacket,   RX_Rssi, 0, TxTime); // if there is a packet for relaying: send it
-                           else TimeSlot(TxChan, 400, CurrPosPacket, RX_Rssi, 0, TxTime); // otherwise send current position packet
 
+    uint8_t *Packet=0;
+    if(CurrPosPacket.isReady()) Packet = (uint8_t *)&CurrPosPacket;
+    if(RelaySlot)
+    { if(StatSlot) Packet = (uint8_t *)&CurrStatPacket;
+      else if(RelayReady) Packet = (uint8_t *)&RelayPacket; }
+    TimeSlot(TxChan, 400, Packet,   RX_Rssi, 0, TxTime);
+
+    TRX.WriteMode(RF_OPMODE_STANDBY);
+    // vTaskDelay(1);                                                             // do we need a delay here ?
     TxChan = RF_FreqPlan.getChannel(RX_UnixTime, 1, 1);                        // transmit channel
     RX_Channel = TxChan;                                                       // listen channel
     SetRxChannel();
+    TRX.WriteMode(RF_OPMODE_RECEIVER);
 
     if(RelaySlot) RelaySlot=0;
              else RelaySlot = (GPS_UnixTime&1)==0;
                                                                                // here we can read the chip temperature
     // GetRelayPacket();                                                       // get readt the packet to be relayed (if any)
 
-    TX_Credit++; if(!TX_Credit) TX_Credit--;                                   // new half slot => increment transmission credit
-
     TxTime = ((RX_Random>>8)&0x3F)+1; TxTime*=6;
-    // TxTime = RelayPacket.Packet.getTxSlot(TxSlotIdx+1);
-    if(RelaySlot && RelayReady) TimeSlot(TxChan, 400, RelayPacket,   RX_Rssi, 0, TxTime);
-                           else TimeSlot(TxChan, 400, CurrPosPacket, RX_Rssi, 0, TxTime);
+    Packet=0;
+    if(CurrPosPacket.isReady()) Packet = (uint8_t *)&CurrPosPacket;
+    if(RelaySlot)
+    { if(StatSlot) Packet = (uint8_t *)&CurrStatPacket;
+      else if(RelayReady) Packet = (uint8_t *)&RelayPacket; }
+    TimeSlot(TxChan, 400, Packet,   RX_Rssi, 0, TxTime);
 
   }
 
