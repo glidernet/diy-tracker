@@ -31,8 +31,8 @@ int16_t IntAtan2(int16_t Y, int16_t X);
 // uint32_t IntSqrt(uint32_t Inp);
 // uint64_t IntSqrt(uint64_t Inp);
 
-template<class Type>
- Type IntSqrt(Type Inp)
+template<class Type>                                 // integer square root for 16-bit or 32-bit
+ Type IntSqrt(Type Inp)                              // must be made with unsigned type or signed types with _positive_ values
 { Type Out  = 0;
   Type Mask = 1; Mask<<=(sizeof(Type)*8-2);
 

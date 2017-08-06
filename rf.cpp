@@ -268,10 +268,11 @@ static uint8_t ReceivePacket(void)                           // see if a packet 
     // taskYIELD();
     if( (Check==0) && (RxPacket->RxErr<16) )                     // what limit on number of detected bit errors ?
     { int32_t LatDist, LonDist;
-      if( RxPacket->Packet.isOther() || RxPacket->Packet.isEncrypted() ) // non-position packet: ignore
+      if( RxPacket->Packet.Header.Other || RxPacket->Packet.Header.Encrypted ) // non-position packet: ignore
       { }
       else                                                       // de-whiten
-      { uint8_t MyOwnPacket = ( RxPacket->Packet.getAddress() == Parameters.getAddress() ) && ( RxPacket->Packet.getAddrType() == Parameters.getAddrType() );
+      { uint8_t MyOwnPacket = ( RxPacket->Packet.Header.Address == Parameters.getAddress() )
+                           && ( RxPacket->Packet.Header.AddrType == Parameters.getAddrType() );
         RxPacket->Packet.Dewhiten();
         bool DistOK = RxPacket->Packet.calcDistanceVector(LatDist, LonDist, GPS_Latitude, GPS_Longitude, GPS_LatCosine)>=0;
         if(DistOK)
@@ -421,7 +422,7 @@ static void GetRelayPacket(void)                                 // prepare a pa
   if(RelayQueue.Packet[Idx].Rank==0) return;
   // RelayPacket = RelayQueue.Packet[Idx];
   memcpy(RelayPacket.Packet.Byte(), RelayQueue[Idx], OGN_Packet::Bytes);
-  RelayPacket.Packet.incRelayCount();
+  RelayPacket.Packet.Header.RelayCount++;
   RelayPacket.Packet.Whiten(); RelayPacket.calcFEC();
   // PrintRelayQueue(Idx);  // for debug
   RelayQueue.decrRank(Idx);
@@ -495,19 +496,19 @@ void vTaskRF(void* pvParameters)
     if(GPS_TimeSinceLock>2)                                                    // if GPS lock is already there for more than 2 seconds
     { GPS_Position *Position = GPS_getPosition();                              // get the most recent valid GPS position
       RF_FreqPlan.setPlan(Position->Latitude, Position->Longitude);            // set the frequency plan according to the GPS position
-      if(Position && Position->isComplete() && Position->isValid() )           // position must be complete and valid
+      if(Position && Position->Complete && Position->isValid() )               // position must be complete and valid
       { int8_t Sec=Position->Sec;
         Sec-=2; if(Sec<0) Sec+=60;
         GPS_Position *RefPos = GPS_getPosition(Sec);                           // reference position 2 seconds ago (or just 1 second ?)
-        if(RefPos && RefPos->isComplete() && RefPos->isValid() )               // reference position must be complete and valid
+        if(RefPos && RefPos->Complete && RefPos->isValid() )                   // reference position must be complete and valid
         { Position->calcDifferences(*RefPos);                                  // calculate the differentials
-          CurrPosPacket.Packet.setAddress(Parameters.getAddress());                      // set address
-          CurrPosPacket.Packet.setAddrType(Parameters.getAddrType());                    // address-type
-          CurrPosPacket.Packet.clrOther(); CurrPosPacket.Packet.calcAddrParity();        // rest of header
-          CurrPosPacket.Packet.clrEmergency(); CurrPosPacket.Packet.clrEncrypted(); CurrPosPacket.Packet.setRelayCount(0);
+          CurrPosPacket.Packet.Header.Address  = Parameters.getAddress();               // set address
+          CurrPosPacket.Packet.Header.AddrType = Parameters.getAddrType();              // address-type
+          CurrPosPacket.Packet.Header.Emergency=0; CurrPosPacket.Packet.Header.Encrypted=0; CurrPosPacket.Packet.Header.RelayCount=0;
+          CurrPosPacket.Packet.Header.Other=0; CurrPosPacket.Packet.calcAddrParity();    // rest of header
           Position->Encode(CurrPosPacket.Packet);                                        // encode position/altitude/speed/etc. from GPS position
           CurrPosPacket.Packet.setStealth(Parameters.getStealth());
-          CurrPosPacket.Packet.setAcftType(Parameters.getAcftType());                    // aircraft-type
+          CurrPosPacket.Packet.Position.AcftType = Parameters.getAcftType();             // aircraft-type
           CurrPosPacket.Packet.Whiten(); CurrPosPacket.calcFEC();                        // whiten and calculate FEC code
           CurrPosPacket.setReady();                                                      // mark packet as ready to go
           TimeSinceNoPos=0;
@@ -517,7 +518,7 @@ void vTaskRF(void* pvParameters)
     else if(CurrPosPacket.isReady() )                                          // if GPS lock is not there but previous position is already in the position packet
     { if(TimeSinceNoPos>30)
       { CurrPosPacket.Packet.Dewhiten();
-        CurrPosPacket.Packet.setTime(0x3F);
+        CurrPosPacket.Packet.Position.Time=0x3F;
         CurrPosPacket.Packet.Whiten();
         CurrPosPacket.calcFEC(); }
     }                                                                          // we should invalidate position after some time

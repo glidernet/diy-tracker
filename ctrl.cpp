@@ -10,6 +10,7 @@
 #include "ctrl.h"
 
 #include "nmea.h"        // NMEA
+#include "ubx.h"         // UBX
 #include "parameters.h"  // Parameters in Flash
 #include "format.h"      // output formatting
 
@@ -96,6 +97,9 @@ Exit:
 // ================================================================================================
 
 static NMEA_RxMsg NMEA;
+#ifdef WITH_GPS_UBX_PASS
+static UBX_RxMsg  UBX;
+#endif
 
 #ifdef WITH_CONFIG
 static void ReadParameters(void)  // read parameters requested by the user in the NMEA sent.
@@ -152,8 +156,19 @@ static void ProcessInput(void)
     if(Byte==0x03) ProcessCtrlC();                            // if Ctrl-C received
     NMEA.ProcessByte(Byte);                                   // pass the byte through the NMEA processor
     if(NMEA.isComplete())                                     // if complete NMEA:
-    { /* if(NMEA.isChecked()) */ ProcessNMEA();               // and if CRC is good: interpret the NMEA
+    {
+#ifdef WITH_GPS_NMEA_PASS
+      if(NMEA.isChecked())
+        NMEA.Send(GPS_UART_Write);
+#endif
+      ProcessNMEA();                                          // interpret the NMEA
       NMEA.Clear(); }                                         // clear the NMEA processor for the next sentence
+#ifdef WITH_GPS_UBX_PASS
+    UBX.ProcessByte(Byte);
+    if(UBX.isComplete())
+    { UBX.Send(GPS_UART_Write);                               // is there a need for a Mutex on the GPS UART ?
+      UBX.Clear(); }
+#endif
   }
 }
 

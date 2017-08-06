@@ -150,13 +150,14 @@ static void ProcBaro()
     int32_t AltDiff = (PressDiff*(PLR>>4))/250;                      // [0.1 m]
     int32_t Altitude=((AltAver.Out+2048)>>12)+AltDiff;               // [0.1 m]
 
-    uint8_t Frac = Sec%10;
+    uint8_t Frac = Sec%10;                                           // [0.1s]
     if(Frac==0)
-    { GPS_Position *PosPtr = GPS_getPosition(Sec/10);                 // get GPS position record for this second
+    { GPS_Position *PosPtr = GPS_getPosition(Sec/10);                // get GPS position record for this second
       if(PosPtr)                                                     // if found:
-      { PosPtr->StdAltitude = StdAltitude;                           // store standard pressure altitude
+      { PosPtr->Pressure    = Pressure;                              // [0.25Pa]
+        PosPtr->StdAltitude = StdAltitude;                           // store standard pressure altitude
         PosPtr->Temperature = Baro.Temperature;                      // and temperature in the GPS record
-        PosPtr->setBaro(); }
+        PosPtr->Baro=1; }                                            // tick "hasBaro" flag
     }
 
     uint8_t Len=0;                                                   // start preparing the barometer NMEA sentence

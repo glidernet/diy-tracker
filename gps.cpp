@@ -218,7 +218,7 @@ static void GPS_BurstStart(void)                                           // wh
 }
 
 static void GPS_BurstEnd(void)                                             // when GPS stops sending data on the serial port
-{ if(Position[PosIdx].isComplete())                                        // position data complete
+{ if(Position[PosIdx].Complete)                                        // position data complete
   { if(Position[PosIdx].isTimeValid())
     { GPS_Sec=Position[PosIdx].Sec;                                        // get the second - this is important for time in the OGN packets
       if(Position[PosIdx].isDateValid())
@@ -260,10 +260,10 @@ static void GPS_BurstEnd(void)                                             // wh
 GPS_Position *GPS_getPosition(void)
 { uint8_t PrevIdx=PosIdx;
   GPS_Position *PrevPos = Position+PrevIdx;
-  if(PrevPos->isComplete()) return PrevPos;
+  if(PrevPos->Complete) return PrevPos;
   PrevIdx=(PrevIdx+3)&3;
   PrevPos = Position+PrevIdx;
-  if(PrevPos->isComplete()) return PrevPos;
+  if(PrevPos->Complete) return PrevPos;
   return 0; }
 
 GPS_Position *GPS_getPosition(int8_t Sec)
@@ -276,7 +276,7 @@ GPS_Position *GPS_getPosition(int8_t Sec)
 static void GPS_NMEA(void)                                                 // when GPS gets a correct NMEA sentence
 { LED_PCB_Flash(2);                                                        // Flash the LED for 2 ms
   Position[PosIdx].ReadNMEA(NMEA);                                         // read position elements from NMEA
-  if( NMEA.isGxRMC() || NMEA.isGxGGA() || NMEA.isGxGSA() || NMEA.isGPTXT() )
+  if( NMEA.isP() || NMEA.isGxRMC() || NMEA.isGxGGA() || NMEA.isGxGSA() || NMEA.isGPTXT() )
   { static char CRNL[3] = "\r\n";
     xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
     Format_Bytes(CONS_UART_Write, NMEA.Data, NMEA.Len);
@@ -292,7 +292,13 @@ static void GPS_NMEA(void)                                                 // wh
 }
 
 static void GPS_UBX(void)                                                         // when GPS gets an UBX packet
-{ }
+{
+#ifdef WITH_GPS_UBX_PASS
+  { xSemaphoreTake(CONS_Mutex, portMAX_DELAY);                                    // send ther UBX packet to the console
+    UBX.Send(CONS_UART_Write);
+    xSemaphoreGive(CONS_Mutex); }
+#endif
+}
 
 // ----------------------------------------------------------------------------
 
@@ -313,6 +319,13 @@ static void GPS_UBX(void)                                                       
 // $PMTK251,115200*1F<CR><LF>
 
 // static const char *MTK_SetBaudrate_115200 = "$PMTK251,115200*1F\r\n";
+
+
+// Baud setting for UBX GPS:
+// "$PUBX,41,1,0003,0001,19200,0*23\r\n"
+// "$PUBX,41,1,0003,0001,38400,0*26\r\n"
+// "$PUBX,41,1,0003,0001,57600,0*2D\r\n"
+// static const char *UBX_SetBaudrate_115200 = "$PUBX,41,1,0003,0001,115200,0*1E\r\n";
 
 // ----------------------------------------------------------------------------
 
@@ -342,7 +355,7 @@ void vTaskGPS(void* pvParameters)
   Format_String(CONS_UART_Write, "\n");
   xSemaphoreGive(CONS_Mutex);
 
-  // Format_String(GPS_UART_Write, MTK_SetBaudrate_115200);
+  // Format_String(GPS_UART_Write, UBX_SetBaudrate_115200);
 
   int Burst=(-1);                                                         // GPS transmission ongoing or line is idle ?
   { int LineIdle=0;                                                       // counts idle time for the GPS data
@@ -392,6 +405,7 @@ void vTaskGPS(void* pvParameters)
         Format_String(CONS_UART_Write, "bps\n");
         xSemaphoreGive(CONS_Mutex);
         GPS_UART_SetBaudrate(NewBaudRate);
+        Parameters.GPSbaud=NewBaudRate;
         NoValidData=0; }
 #endif
     }
