@@ -13,7 +13,7 @@
 #include "uart1.h"
 
 VolatileFIFO<uint8_t, UART1_RxFIFO_Size> UART1_RxFIFO;
-VolatileFIFO<uint8_t, UART1_TxFIFO_Size> UART1_TxFIFO; // large buffer for the console output
+VolatileFIFO<uint8_t, UART1_TxFIFO_Size> UART1_TxFIFO;
 
 // UART1 pins:
 // PA8 	USART1_CK

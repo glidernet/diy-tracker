@@ -1,12 +1,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#include "stm32f10x.h"
-#include "stm32f10x_rcc.h"
-#include "stm32f10x_gpio.h"
-#include "stm32f10x_exti.h"
-#include "stm32f10x_rcc.h"
-#include "misc.h"
+#include "hal.h"
 
 #include "nmea.h"
 #include "ubx.h"
@@ -27,85 +22,38 @@
 
 #include "main.h"
 
-#ifdef WITH_GPS_ENABLE
-// PA0 is GPS enable
-inline void GPS_DISABLE(void) { GPIO_ResetBits(GPIOA, GPIO_Pin_0); }
-inline void GPS_ENABLE (void) { GPIO_SetBits  (GPIOA, GPIO_Pin_0); }
-#endif
-
-#ifdef WITH_GPS_PPS
-// PA1 is GPS PPS
-inline int GPS_PPS_isOn(void) { return GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_1) != Bit_RESET; }
+#ifdef WITH_PPS_IRQ
+uint32_t   PPS_IRQ_TickCount;                       // [RTOS tick] (coarse) time of previous PPS
+uint32_t   PPS_IRQ_TickTime;                        // [CPU tick] (fine) time of previous PPS
+ int32_t   PPS_IRQ_TickCountDiff;                   // [RTOS tick] diff.
+ int32_t   PPS_IRQ_TickTimeDiff;                    // [CPU tick] diff. of (fine) times between PPS'es
+ int32_t   PPS_IRQ_Correction=0;                    // [1/16 CPU tick]
+// int16_t   PPS_IRQ_PeriodDiff;                      // [CPU tick] time between two PPS'es
+// uint32_t PPS_IRQ_InitLoad;                          // [CPU tick] initial period of SysTick
+// uint32_t PPS_IRQ_InitPeriod;
+// LowPass2<int32_t,6,4,8> PPS_IRQ_PeriodCorrection;
 #endif
 
 #ifdef WITH_PPS_IRQ
-TickType_t PPS_IRQ_TickCount;                       // [RTOS tick] (coarse) time of previous PPS
-uint32_t PPS_IRQ_TickTime;                          // [CPU tick] (fine) time of previous PPS
- int32_t PPS_IRQ_TickTimeDiff;                      // [CPU tick] diff. of (fine) times between PPS'es
-uint32_t PPS_IRQ_InitLoad;                          // [CPU tick] initial period of SysTick
-uint32_t PPS_IRQ_InitPeriod;
-uint32_t PPS_IRQ_Period;                            // [CPU tick] time between two PPS'es
-LowPass2<int32_t,6,4,8> PPS_IRQ_AverPeriod;
-#endif
-
-void GPS_Configuration (void)
-{
-#ifdef WITH_PPS_IRQ
-  NVIC_InitTypeDef NVIC_InitStructure;
-  // NVIC_InitTypeDef NVIC_InitStructure = { .NVIC_IRQChannel = EXTI1_IRQn, .NVIC_IRQChannelPreemptionPriority = 1, .NVIC_IRQChannelSubPriority = 1, .NVIC_IRQChannelCmd = ENABLE };
-
-  NVIC_InitStructure.NVIC_IRQChannel = EXTI1_IRQn;                  // Enable the USART1 Interrupt
-  NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 1;         // 0 = highest, 15 = lowest priority
-  NVIC_InitStructure.NVIC_IRQChannelSubPriority = 1;
-  NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-
-  NVIC_Init(&NVIC_InitStructure);
-
-#endif
-
-  GPIO_InitTypeDef  GPIO_InitStructure;
-
-  RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
-
-#ifdef WITH_GPS_ENABLE
-  GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_0;        // Configure PA.00 as output: GPS Enable(HIGH) / Shutdown(LOW)
-  GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_Out_PP;
-  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_2MHz;
-  GPIO_Init(GPIOA, &GPIO_InitStructure);
-#endif
-
-#ifdef WITH_GPS_PPS
-  GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_1;         // Configure PA.01 as input: PPS from GPS
-  GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_IPD;
-  GPIO_Init(GPIOA, &GPIO_InitStructure);
-#endif
-
-#ifdef WITH_PPS_IRQ
-  // we want interrupt on rising PPS from GPS
-  GPIO_EXTILineConfig(GPIO_PortSourceGPIOA, GPIO_PinSource1);
-  EXTI_InitTypeDef EXTI_InitStructure;
-  EXTI_InitStructure.EXTI_Line = EXTI_Line1;
-  EXTI_InitStructure.EXTI_Mode = EXTI_Mode_Interrupt;
-  EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Rising;
-  EXTI_InitStructure.EXTI_LineCmd = ENABLE;
-  EXTI_Init(&EXTI_InitStructure);
-
-  NVIC_EnableIRQ(EXTI1_IRQn);
-
-#endif
-
-#ifdef WITH_GPS_ENABLE
-  GPS_ENABLE();
-#endif
+static void PPS_IRQ(uint32_t TickCount, uint32_t TickTime)         // GPS PPS IRQ handler
+{ PPS_IRQ_TickCountDiff = TickCount - PPS_IRQ_TickCount;
+  PPS_IRQ_TickTimeDiff = TickTime - PPS_IRQ_TickTime;
+  const int32_t OneSec = 1000;
+  if(abs((int32_t)(PPS_IRQ_TickCountDiff-OneSec))<=2)
+  { for( ; ; )
+    { if(PPS_IRQ_TickCountDiff==OneSec) break;
+      if(PPS_IRQ_TickCountDiff>OneSec)
+      { PPS_IRQ_TickTimeDiff+=SysTickPeriod; PPS_IRQ_TickCountDiff-=1; }
+      if(PPS_IRQ_TickCountDiff<OneSec)
+      { PPS_IRQ_TickTimeDiff-=SysTickPeriod; PPS_IRQ_TickCountDiff+=1; }
+    }
+    int32_t Diff = PPS_IRQ_TickTimeDiff - ((PPS_IRQ_Correction+8)>>4);
+    PPS_IRQ_Correction += Diff;
+  }
+  PPS_IRQ_TickCount = TickCount;
+  PPS_IRQ_TickTime  = TickTime;
 }
-
-#ifdef WITH_PPS_IRQ
-#ifdef __cplusplus
-  extern "C"
-#endif
-void EXTI1_IRQHandler(void)               // PPS interrupt
-{
-  if(EXTI_GetITStatus(EXTI_Line1) != RESET)
+/*
   { uint32_t Load=getSysTick_Reload();                             // [CPU tick] period of the SysTick - 1
     uint32_t TickTime=Load-getSysTick_Count();                     // [CPU tick] what time after RTOS tick the PPS arrived
     TickType_t TickCount = xTaskGetTickCountFromISR();             // [RTOS tick] RTOS tick counter
@@ -135,8 +83,7 @@ void EXTI1_IRQHandler(void)               // PPS interrupt
     }
     PPS_IRQ_TickTime=TickTime;
   }
-  EXTI_ClearITPendingBit(EXTI_Line1);
-}
+*/
 #endif
 
 // void Debug_Print(uint8_t Byte) { while(!UART1_TxEmpty()) taskYIELD(); UART1_TxChar(Byte); }
@@ -144,10 +91,10 @@ void EXTI1_IRQHandler(void)               // PPS interrupt
 static NMEA_RxMsg  NMEA;                 // NMEA sentences catcher
 static UBX_RxMsg   UBX;                  // UBX messages catcher
 
-static GPS_Position Position[4];         // four GPS position pipe
-static uint8_t     PosIdx;
+static GPS_Position Position[4];         // GPS position pipe
+static uint8_t      PosIdx;              // Pipe index
 
-static TickType_t Burst_TickCount;       // [msec] TickCount when the data burst from GPS started
+static   TickType_t Burst_TickCount;     // [msec] TickCount when the data burst from GPS started
 
          TickType_t PPS_TickCount;       // [msec] TickCount of the most recent PPS pulse
          uint32_t   GPS_TimeSinceLock;   // [sec] time since the GPS has a lock
@@ -162,6 +109,20 @@ volatile  uint8_t   GPS_Sec=0;           // [sec] UTC time: second
          uint16_t   GPS_LatCosine=0x3000;  //
 //          uint8_t   GPS_FreqPlan=0;      //
 
+// ----------------------------------------------------------------------------
+
+int16_t GPS_AverageSpeed(void)                        // get average speed based on stored GPS positions
+{ uint8_t Count=0;
+  int16_t Speed=0;
+  for(uint8_t Idx=0; Idx<4; Idx++)                    // loop over GPS positions
+  { GPS_Position *Pos = Position+Idx;
+    if( !Pos->Complete || !Pos->isValid() ) continue; // skip invalid positions
+    Speed += Pos->Speed +abs(Pos->ClimbRate); Count++;
+  }
+  if(Count==0) return -1;
+  if(Count>1) Speed/=Count;
+  return Speed; }
+
 // static char Line[64];                  // for console output formating
 
 uint16_t PPS_Phase(void)                              //
@@ -173,9 +134,42 @@ uint16_t PPS_Phase(void)                              //
 
 static void GPS_PPS_On(uint8_t Delay=0)               // called on rising edge of PPS
 { LED_PCB_Flash(50);
-  PPS_TickCount=xTaskGetTickCount()-Delay;
+  PPS_TickCount = xTaskGetTickCount()-Delay;
   uint8_t Sec=GPS_Sec; Sec++; if(Sec>=60) Sec=0; GPS_Sec=Sec;
-  GPS_UnixTime++; }
+  GPS_UnixTime++;
+/*
+#ifdef WITH_PPS_IRQ
+  { // only to check SysTick
+  Format_String(CONS_UART_Write, "PPS_IRQ: ");
+  Format_UnsDec(CONS_UART_Write, (uint32_t)(xTaskGetTickCount()));
+  CONS_UART_Write(':');
+  Format_UnsDec(CONS_UART_Write, (SysTickPeriod-1) - getSysTick_Count());
+
+  CONS_UART_Write(' ');
+  Format_UnsDec(CONS_UART_Write, PPS_IRQ_TickCount);
+  CONS_UART_Write(':');
+  Format_UnsDec(CONS_UART_Write, PPS_IRQ_TickTime);
+
+  CONS_UART_Write(' ');
+  Format_SignDec(CONS_UART_Write, PPS_IRQ_TickCountDiff);
+  CONS_UART_Write(':');
+  Format_SignDec(CONS_UART_Write, PPS_IRQ_TickTimeDiff);
+
+  CONS_UART_Write(' ');
+  Format_SignDec(CONS_UART_Write, (10*PPS_IRQ_Correction+8)>>4, 1, 1);
+
+  // Format_UnsDec(CONS_UART_Write, getSysTick_Reload());
+  // CONS_UART_Write(' ');
+  // Format_UnsDec(CONS_UART_Write, PPS_IRQ_Period);
+  // CONS_UART_Write('/');
+  // Format_SignDec(CONS_UART_Write, PPS_IRQ_AverPeriod.getOutput());
+  // CONS_UART_Write(' ');
+  // Format_SignDec(CONS_UART_Write, (PPS_IRQ_AverPeriod.Out*100+128)>>8, 3, 2);
+  CONS_UART_Write('\r'); CONS_UART_Write('\n');
+  }
+#endif
+*/
+}
 
 static void GPS_PPS_Off(void)                       // called on falling edge of PPS
 { }
@@ -296,6 +290,9 @@ static void GPS_UBX(void)                                                       
 #ifdef WITH_GPS_UBX_PASS
   { xSemaphoreTake(CONS_Mutex, portMAX_DELAY);                                    // send ther UBX packet to the console
     UBX.Send(CONS_UART_Write);
+    // Format_String(CONS_UART_Write, "UBX");
+    // Format_Hex(CONS_UART_Write, UBX.Class);
+    // Format_Hex(CONS_UART_Write, UBX.ID);
     xSemaphoreGive(CONS_Mutex); }
 #endif
 }
@@ -339,10 +336,11 @@ static const uint32_t BaudRate[BaudRates] = { 4800, 9600, 19200, 38400, 57600, 1
 void vTaskGPS(void* pvParameters)
 {
 #ifdef WITH_PPS_IRQ
-  PPS_IRQ_InitLoad = getSysTick_Reload();
-  PPS_IRQ_InitPeriod = 1000*(PPS_IRQ_InitLoad+1);
-  PPS_IRQ_Period = PPS_IRQ_InitPeriod;
-  PPS_IRQ_AverPeriod.Set(0);
+  // PPS_IRQ_InitLoad = getSysTick_Reload();
+  // PPS_IRQ_InitPeriod = 1000*(PPS_IRQ_InitLoad+1);
+  // PPS_IRQ_Period = PPS_IRQ_InitPeriod;
+  // PPS_IRQ_AverPeriod.Set(0);
+  GPS_PPS_IRQ_Callback = PPS_IRQ;
 #endif
 
   PPS_TickCount=0;

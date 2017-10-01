@@ -34,6 +34,7 @@ uint8_t Format_Hex( char *Output, uint32_t Word, uint8_t Digits);
 
 
    int8_t  Read_Hex1(char Digit);
+   int16_t Read_Hex2(const char *Inp);
 
    int8_t  Read_Dec1(char Digit);                  // convert single digit into an integer
    inline int8_t Read_Dec1(const char *Inp) { return Read_Dec1(Inp[0]); }

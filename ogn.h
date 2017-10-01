@@ -348,18 +348,20 @@ class OGN_Packet           // Packet structure for the OGN tracker
      LonDist = (LonDist<<12)/LatCos;                                  // LonDist/=cosine(Latitude)
      EncodeLongitude(RefLon+(LonDist*27)/5); }
 
-   // uint8_t WritePFLAA(char *NMEA, GPS_Position &Position)
-   // { return  WritePFLAA(NMEA, Position.Latitude, Position.Longitude, (Position.Altitude+5)/10, Position.LatitudeCosine); }
+   // uint8_t WritePFLAA(char *NMEA, uint8_t Status, GPS_Position &Position)
+   // { return  WritePFLAA(NMEA, uint8_t Status, Position.Latitude, Position.Longitude, (Position.Altitude+5)/10, Position.LatitudeCosine); }
 
-   uint8_t WritePFLAA(char *NMEA, int32_t RefLat, int32_t RefLon, int32_t RefAlt, uint16_t LatCos)
+   uint8_t WritePFLAA(char *NMEA, uint8_t Status, int32_t RefLat, int32_t RefLon, int32_t RefAlt, uint16_t LatCos)
    { int32_t LatDist, LonDist;
      if(calcDistanceVector(LatDist, LonDist, RefLat, RefLon, LatCos)<0) return 0;     // return zero, when distance too large
      int32_t AltDist = DecodeAltitude()-RefAlt;
-     return WritePFLAA(NMEA, LatDist, LonDist, AltDist); }                            // return number of formatted characters
+     return WritePFLAA(NMEA, Status, LatDist, LonDist, AltDist, Status); }                            // return number of formatted characters
 
-   uint8_t WritePFLAA(char *NMEA, int32_t LatDist, int32_t LonDist, int32_t AltDist)
+   uint8_t WritePFLAA(char *NMEA, uint8_t Status, int32_t LatDist, int32_t LonDist, int32_t AltDist)
    { uint8_t Len=0;
-     Len+=Format_String(NMEA+Len, "$PFLAA,0,");                    // sentence name and alarm-level (but no alarms for trackers)
+     Len+=Format_String(NMEA+Len, "$PFLAA,");                    // sentence name and alarm-level (but no alarms for trackers)
+     NMEA[Len++]='0'+Status;
+     NMEA[Len++]=',';
      Len+=Format_SignDec(NMEA+Len, LatDist);
      NMEA[Len++]=',';
      Len+=Format_SignDec(NMEA+Len, LonDist);
@@ -462,9 +464,9 @@ class OGN_Packet           // Packet structure for the OGN tracker
    bool goodAddrParity(void) const  { return ((Count1s(HeaderWord&0x0FFFFFFF)&1)==0); }  // Address parity should be EVEN
    void calcAddrParity(void)        { if(!goodAddrParity()) HeaderWord ^= 0x08000000; }  // if not correct parity, flip the parity bit
 
-   bool  isStealth(void) const        { return Position.Stealth; }   // position not to be displayed on public webpages
-   void setStealth(uint8_t Stealth=1) { Position.Stealth = Stealth; }
-   void clrStealth(void)              {        Position.Stealth = 0; }
+   // bool  isStealth(void) const        { return Position.Stealth; }   // position not to be displayed on public webpages
+   // void setStealth(uint8_t Stealth=1) { Position.Stealth = Stealth; }
+   // void clrStealth(void)              {        Position.Stealth = 0; }
 
    // uint8_t  getAcftType(void) const   { return Position.AcftType; }
    // void     setAcftType(uint8_t Type) { Position.AcftType = Type; }
@@ -653,7 +655,7 @@ class OGN_Packet           // Packet structure for the OGN tracker
    void EncodeTemperature(int16_t Temp)   { Status.Temperature=EncodeSR2V5(Temp-200); } // [0.1degC]
    int16_t DecodeTemperature(void) const  { return 200+DecodeSR2V5(Status.Temperature); }
 
-   void EncodeVoltage(uint16_t Voltage)   { Status.Voltage=EncodeUR2V6(Voltage); }      // 
+   void EncodeVoltage(uint16_t Voltage)   { Status.Voltage=EncodeUR2V6(Voltage); }      // [1/64V]
   uint16_t DecodeVoltage(void) const      { return DecodeUR2V6(Status.Voltage); }
 
 // --------------------------------------------------------------------------------------------------------------
@@ -1218,9 +1220,9 @@ class GPS_Position
    bool isValid(void) const                          // is GPS lock there ?
    { if(!isTimeValid()) return 0;                    // is GPS time valid/present ?
      if(!isDateValid()) return 0;                    // is GPS date valid/present ?
-     if(FixQuality==0) return 0;                     // Fix quality must be 1=GPS or 2=DGPS
-     if(FixMode==1) return 0;                        // if GSA says "no lock" (when GSA is not there, FixMode=0)
-     if(Satellites<=0) return 0;                     // if number of satellites none or invalid
+     if(FixQuality==0)  return 0;                    // Fix quality must be 1=GPS or 2=DGPS
+     if(FixMode==1)     return 0;                    // if GSA says "no lock" (when GSA is not there, FixMode=0)
+     if(Satellites<=0)  return 0;                    // if number of satellites none or invalid
      return 1; }
 
    void copyTime(GPS_Position &RefPosition)           // copy HH:MM:SS.SSS from another record
@@ -1237,9 +1239,9 @@ class GPS_Position
    void copyTimeDate(GPS_Position &RefPosition) { copyTime(RefPosition); copyDate(RefPosition); }
 
    uint8_t incrTime(void)                            // increment HH:MM:SS by one second
-   { Sec++; if(Sec<60) return 0;
+   { Sec++;  if(Sec<60) return 0;
      Sec=0;
-     Min++; if(Min<60) return 0;
+     Min++;  if(Min<60) return 0;
      Min=0;
      Hour++; if(Hour<24) return 0;
      Hour=0;

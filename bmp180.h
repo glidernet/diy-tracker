@@ -12,7 +12,9 @@
 class BMP180
 { private:
 #ifndef NO_RTOS
+  public:
    static const uint8_t ADDR         = 0x77; // BMP180 I2C address
+  private:
    static const uint8_t REG_CALIB    = 0xAA; // calibration register: 11x16bit (MSB first)
    static const uint8_t REG_ID       = 0xD0; // ID register: always reads 0x55
    static const uint8_t REG_RESET    = 0xE0; // write 0xB6 to perform soft-reset

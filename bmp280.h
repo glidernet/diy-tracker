@@ -12,7 +12,8 @@
 class BMP280
 { private:
 #ifndef NO_RTOS
-   static const uint8_t ADDR         = 0x77; // BMP180 I2C address
+   static const uint8_t ADDR0        = 0x76; // possible I2C addresses
+   static const uint8_t ADDR1        = 0x77;
 
    static const uint8_t REG_CALIB    = 0x88; // calibration register:
    static const uint8_t REG_ID       = 0xD0; // ID register: always reads 0x58
@@ -35,6 +36,7 @@ class BMP280
   public:
 #ifndef NO_RTOS
    I2C_TypeDef* Bus;                         // which I2C bus
+   uint8_t ADDR;                             // detected I2C address
 #endif
   private:
   uint16_t T1;                // 13 calibration values from EEPROM
@@ -73,8 +75,12 @@ class BMP280
 #ifndef NO_RTOS
   uint8_t CheckID(void) // check ID, to make sure the BMP180 is connected and works correctly
    { uint8_t ID;
-     Error=I2C_Read(Bus, ADDR, REG_ID, ID); if(Error) return Error;
-     return ID!=0x58; } // 0 => no error and correct ID
+     ADDR=0;
+     Error=I2C_Read(Bus, ADDR0, REG_ID, ID);
+     if( (!Error) && (ID==0x58) ) { ADDR=ADDR0; return 0; }
+     Error=I2C_Read(Bus, ADDR1, REG_ID, ID);
+     if( (!Error) && (ID==0x58) ) { ADDR=ADDR1; return 0; }
+     return 1; } // 0 => no error and correct ID
 
   uint8_t ReadCalib(void) // read the calibration constants from the EEPROM
   { Error=I2C_Read(Bus, ADDR, REG_CALIB, (uint8_t *)(&T1), 26);

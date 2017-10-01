@@ -1,7 +1,11 @@
-#include "FreeRTOS.h"
-#include "task.h"
-#include "semphr.h"
-#include "queue.h"
+#include "hal.h"
+
+#include "hal.h"
+
+#include <FreeRTOS.h>
+#include <task.h>
+#include <semphr.h>
+#include <queue.h>
 
 #include "stm32f10x_iwdg.h"
 
@@ -70,26 +74,30 @@ static void ProcessCtrlC(void)                                  // print system 
     // xSemaphoreGive(CONS_Mutex);                                  // give back UART1 to other tasks
   }
   vPortFree( pxTaskStatusArray );
-/*
+
 #ifdef WITH_PPS_IRQ
   { // only to check SysTick
-  Format_UnsDec(CONS_UART_Write, (uint32_t)(xTaskGetTickCount()-PPS_IRQ_TickCount));
-  CONS_UART_Write(':');
-  Format_UnsDec(CONS_UART_Write, PPS_IRQ_TickTime);
-  CONS_UART_Write(' ');
-  Format_SignDec(CONS_UART_Write, PPS_IRQ_TickTimeDiff);
-  CONS_UART_Write('/');
-  Format_UnsDec(CONS_UART_Write, getSysTick_Reload());
-  CONS_UART_Write(' ');
-  Format_UnsDec(CONS_UART_Write, PPS_IRQ_Period);
-  CONS_UART_Write('/');
+  Format_String(CONS_UART_Write, "Xtal/PPS: ");
+  Format_SignDec(CONS_UART_Write, (int32_t)(((10000>>4)*PPS_IRQ_Correction+SysTickPeriod/2)/SysTickPeriod), 1, 1);
+  Format_String(CONS_UART_Write, "ppm\n");
+  // Format_UnsDec(CONS_UART_Write, (uint32_t)(xTaskGetTickCount()-PPS_IRQ_TickCount));
+  // CONS_UART_Write(':');
+  // Format_UnsDec(CONS_UART_Write, PPS_IRQ_TickTime);
+  // CONS_UART_Write(' ');
+  // Format_SignDec(CONS_UART_Write, PPS_IRQ_TickCountDiff);
+  // CONS_UART_Write(':');
+  // Format_SignDec(CONS_UART_Write, PPS_IRQ_TickTimeDiff);
+  // Format_UnsDec(CONS_UART_Write, getSysTick_Reload());
+  // CONS_UART_Write(' ');
+  // Format_UnsDec(CONS_UART_Write, PPS_IRQ_Period);
+  // CONS_UART_Write('/');
   // Format_SignDec(CONS_UART_Write, PPS_IRQ_AverPeriod.getOutput());
   // CONS_UART_Write(' ');
-  Format_SignDec(CONS_UART_Write, (PPS_IRQ_AverPeriod.Out*100+128)>>8, 3, 2);
-  CONS_UART_Write('\r'); CONS_UART_Write('\n');
+  // Format_SignDec(CONS_UART_Write, (PPS_IRQ_AverPeriod.Out*100+128)>>8, 3, 2);
+  // CONS_UART_Write('\r'); CONS_UART_Write('\n');
   }
 #endif
-*/
+
 Exit:
   xSemaphoreGive(CONS_Mutex);                                       // give back UART1 to other tasks
 }

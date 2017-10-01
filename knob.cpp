@@ -1,5 +1,7 @@
 #include <stdlib.h>
 
+#include "hal.h"
+
 #include <FreeRTOS.h>
 #include <task.h>
 #include <semphr.h>
@@ -8,8 +10,6 @@
 #include "knob.h"
 
 #include "format.h"
-#include "uart1.h"                         // console UART
-#include "adc.h"
 
 #include "main.h"
 
@@ -25,7 +25,7 @@ void vTaskKNOB(void* pvParameters)
   for( ; ; )
   { vTaskDelay(40);
     xSemaphoreTake(ADC1_Mutex, portMAX_DELAY);
-    uint16_t Knob     = ADC1_Read(ADC_Channel_8);
+    uint16_t Knob     = ADC_Read_Knob();
     xSemaphoreGive(ADC1_Mutex);
     uint16_t PrevKnob = ((uint16_t)Tick<<8)+0x80;
      int16_t Err      = Knob-PrevKnob;
@@ -36,9 +36,6 @@ void vTaskKNOB(void* pvParameters)
       // CONS_UART_Write('\r'); CONS_UART_Write('\n');
       // xSemaphoreGive(CONS_Mutex);
     }
-
-    // uint16_t MCU_Temp = ADC1_Read(ADC_Channel_TempSensor);
-    // uint16_t MCU_Vref = ADC1_Read(ADC_Channel_Vrefint);
 
   }
 

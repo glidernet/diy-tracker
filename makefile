@@ -1,7 +1,7 @@
 # Tool chain downloaded from: https://launchpad.net/gcc-arm-embedded
 # unpacked to a directory: TPATH
 
-# TPATH = ../gcc-arm-none-eabi-4.9/bin
+# TPATH = ../../gcc-arm-none-eabi-4.9/bin
 # TPATH = ../gcc-arm-none-eabi-5.4/bin
 TPATH = /usr/bin
 TCHAIN = arm-none-eabi
@@ -9,43 +9,55 @@ TCHAIN = arm-none-eabi
 #-------------------------------------------------------------------------------
 
 # list of optional features to be compiled in:
-# i2c1 ... I2C-1 interface
-# sdcard ... SD card interface with FAT filesystem
-# bmp180 ... barometric pressure bmp180 sensor
-# bmp280 ... barometric pressure bmp280 sensor
-# beeper ... beeper
-# vario ... vario sound (selects beeper)
-# sdlog ... logging to sdcard (selects sdcard too)
-# knob ... user knob to set volume and options on PB0
-# bat_sense ... measure battery voltage with R-R divider to pin PB1
-# config ... setting the aircraft-type, address-type, address, etc. through the serial port
+# i2c1          ... I2C-1 interface
+# sdcard        ... SD card interface with FAT filesystem
+# bmp180        ... barometric pressure bmp180 sensor
+# bmp280        ... barometric pressure bmp280 sensor
+# beeper        ... beeper
+# vario         ... vario sound (selects beeper)
+# sdlog         ... logging to sdcard (selects sdcard too)
+# knob          ... user knob to set volume and options on PB0
+# batt_sense    ... measure battery voltage with R-R divider to pin PB1
+# config        ... setting the aircraft-type, address-type, address, etc. through the serial port
+
 # rfm69
-# rfm69w ... for the lower tx power RF chip
+# rfm69w        ... for the lower tx power RF chip
 # rfm95
-# relay ... packet-relay code (conditional code not implemented yet)
-# pps_irq .. PPS signal makes an IRQ and the RTOS clock is adjusted in frequency to mathc the GPS (but not very precise)
-# gps_pps ... GPS does deliver PPS, otherwise we get the timing from when the GPS starts sending serial data
-# gps_enable ... GPS senses the "enable" line so it is possibly to shut it down
-# gps_autobaud... GPS tries various baud rates until valid data is received
-# gps_ubx_pass... pass UBX messages between the console and the GPS - for GPS configuration
-# gps_nmea_pass... pass (P-private) NMEA messages between the console and the GPS - for GPS configuration
 
-# swap_uarts ... use UART1 for GPS and UART2 for console
-# ogn_cube_1 ... Tracker hardware by Miroslav Cervenka
+# relay         ... packet-relay code (conditional code not implemented yet)
+# pps_irq       ... PPS signal makes an IRQ and the RTOS clock is adjusted in frequency to mathc the GPS (but not very precise)
+# gps_pps       ... GPS does deliver PPS, otherwise we get the timing from when the GPS starts sending serial data
+# gps_enable    ... GPS senses the "enable" line so it is possibly to shut it down
+# gps_autobaud  ... GPS tries various baud rates until valid data is received
+# gps_ubx_pass  ... pass UBX messages between the console and the GPS - for GPS configuration
+# gps_nmea_pass ... pass (P-private) NMEA messages between the console and the GPS - for GPS configuration
 
-# WITH_OPTS = rfm69 beeper vario i2c1 bmp180 knob  relay config pps_irq # for regular tracker with a knob and BMP180 but no SD card
-# WITH_OPTS = rfm69 beeper vario i2c1 bmp180 sdlog relay config # for the test system (no knob but the SD card)
-WITH_OPTS = rfm69 beeper vario i2c1 bmp180 relay config gps_pps gps_enable gps_autobaud gps_ubx_pass gps_nmea_pass pps_irq
-# WITH_OPTS = rfm69 beeper relay config
-# WITH_OPTS = rfm95 beeper vario i2c1 bmp180 relay config
+# blue_pill     ... use Blue Pill STM32F103c8t6 board
+# maple_mini    ... use Maple Mini STM32F103cbt6 board
+# ogn_cube_1    ... Tracker hardware by Miroslav Cervenka
+# swap_uarts    ... use UART1 for GPS and UART2 for console
+
+# lookout       ...
+
+# WITH_OPTS = blue_pill rfm69 beeper vario i2c1 bmp180 knob  relay config pps_irq # for regular tracker with a knob and BMP180 but no SD card
+# WITH_OPTS = blue_pill rfm69 beeper vario i2c1 bmp180 sdlog relay config # for the test system (no knob but the SD card)
+# WITH_OPTS = blue_pill rfm69 beeper vario i2c1 bmp180 lookout relay config gps_pps gps_enable gps_autobaud gps_ubx_pass gps_nmea_pass pps_irq
+# WITH_OPTS = maple_mini rfm69 i2c1 bmp180 relay config gps_pps pps_irq gps_enable gps_autobaud
+WITH_OPTS = blue_pill rfm69 beeper vario i2c1 bmp180 relay lookout config gps_pps pps_irq gps_enable gps_autobaud gps_ubx_pass gps_nmea_pass
+# WITH_OPTS = blue_pill rfm69 beeper vario i2c1 bmp180 relay config gps_pps pps_irq gps_enable gps_autobaud
+# WITH_OPTS = blue_pill rfm69 beeper relay config
+# WITH_OPTS = blue_pill rfm95 beeper vario i2c1 bmp180 relay config
 
 # WITH_OPTS = rfm69 relay config swap_uarts i2c2 bmp280 ogn_cube_1 # for OGN-CUBE-1
 
 # MCU = STM32F103C8  # STM32F103C8 for no-name STM32F1 board, STM32F103CB for Maple mini
 
+RTOS = FreeRTOS_9.0.0
+
 #-------------------------------------------------------------------------------
 
 C_SRC += main.cpp
+C_SRC += hal.cpp
 
 C_SRC += gps.cpp
 C_SRC += rf.cpp
@@ -78,10 +90,10 @@ C_SRC  += $(wildcard cmsis_boot/startup/*.c)
 INCDIR += -Istm_lib/inc
 C_SRC  += $(wildcard stm_lib/src/*.c)
 
-INCDIR += -IFreeRTOS_8.2.0/Source/include -IFreeRTOS_8.2.0/Source/portable/GCC/ARM_CM3
-C_SRC  += $(wildcard FreeRTOS_8.2.0/Source/*.c)
-C_SRC  += $(wildcard FreeRTOS_8.2.0/Source/portable/GCC/ARM_CM3/*.c)
-C_SRC  += FreeRTOS_8.2.0/Source/portable/MemMang/heap_4.c
+INCDIR += -I$(RTOS)/Source/include -I$(RTOS)/Source/portable/GCC/ARM_CM3
+C_SRC  += $(wildcard $(RTOS)/Source/*.c)
+C_SRC  += $(wildcard $(RTOS)/Source/portable/GCC/ARM_CM3/*.c)
+C_SRC  += $(RTOS)/Source/portable/MemMang/heap_4.c
 
 # ..............................................................................
 
@@ -136,8 +148,8 @@ ifneq ($(findstring knob,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_KNOB
 endif
 
-ifneq ($(findstring bat_sense,$(WITH_OPTS)),)
-  WITH_DEFS += -DWITH_BAT_SENSE
+ifneq ($(findstring batt_sense,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_BATT_SENSE
 endif
 
 ifneq ($(findstring config,$(WITH_OPTS)),)
@@ -156,8 +168,16 @@ ifneq ($(findstring rfm95,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_RFM95
 endif
 
+ifneq ($(findstring rf_irq,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_RF_IRQ
+endif
+
 ifneq ($(findstring relay,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_RELAY
+endif
+
+ifneq ($(findstring lookout,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_LOOKOUT
 endif
 
 ifneq ($(findstring gps_pps,$(WITH_OPTS)),)
@@ -188,19 +208,29 @@ ifneq ($(findstring swap_uarts,$(WITH_OPTS)),)
   WITH_DEFS += -DUART1_RxFIFO_Size=32    # GPS
   WITH_DEFS += -DUART1_TxFIFO_Size=32
   WITH_DEFS += -DUART2_RxFIFO_Size=32    # console
-  WITH_DEFS += -DUART2_TxFIFO_Size=256
+  WITH_DEFS += -DUART2_TxFIFO_Size=512
 else
   WITH_DEFS += -DUART1_RxFIFO_Size=32    # console
-  WITH_DEFS += -DUART1_TxFIFO_Size=256
+  WITH_DEFS += -DUART1_TxFIFO_Size=512
   WITH_DEFS += -DUART2_RxFIFO_Size=32    # GPS
   WITH_DEFS += -DUART2_TxFIFO_Size=32
+endif
+
+MCU = STM32F103C8
+
+ifneq ($(findstring blue_pill,$(WITH_OPTS)),)
+  MCU = STM32F103C8
+  WITH_DEFS += -DWITH_BLUE_PILL
+endif
+
+ifneq ($(findstring maple_mini,$(WITH_OPTS)),)
+  MCU = STM32F103CB
+  WITH_DEFS += -DWITH_MAPLE_MINI
 endif
 
 ifneq ($(findstring ogn_cube_1,$(WITH_OPTS)),)
   MCU = STM32F103CB
   WITH_DEFS += -DWITH_OGN_CUBE_1
-else
-  MCU = STM32F103C8
 endif
 
 #-------------------------------------------------------------------------------
@@ -245,6 +275,9 @@ LNK_OPT += -T$(LDSCRIPT)
 OBJECTS = $(patsubst %,$(OBJDIR)/%.o,$(basename $(notdir $(C_SRC))))
 vpath %.c $(sort $(dir $(C_SRC)))
 vpath %.cpp $(sort $(dir $(C_SRC)))
+
+$(info DEFS = $(DEFS))
+# $(info WITH_DEFS = $(WITH_DEFS))
 
 #-------------------------------------------------------------------------------
 
@@ -301,7 +334,7 @@ clean:
 	-rm -fR $(OUTDIR)
 
 arch:	clean
-	tar cvzf diy-tracker.tgz makefile *.h *.cc *.cpp *.ld *.py cmsis cmsis_boot stm_lib FreeRTOS_8.2.0 # free_rtos # FRT_Library
+	tar cvzf diy-tracker.tgz makefile *.h *.cc *.cpp *.ld *.py cmsis cmsis_boot stm_lib FreeRTOS_8.2.0 FreeRTOS_9.0.0 # free_rtos # FRT_Library
 
 #-------------------------------------------------------------------------------
 

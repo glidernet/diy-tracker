@@ -7,7 +7,7 @@
 // Beeper is on PB8 = TIM4.CH3 and PB9 = TIM4.CH4
 
 void Beep_Configuration(void)
-{ 
+{
   RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM4, ENABLE);
 
   TIM_TimeBaseInitTypeDef SetupTimer;
@@ -44,7 +44,7 @@ void Beep_Configuration(void)
 }
 
 void Beep(uint16_t Period, uint8_t Duty, uint8_t DoubleAmpl)          // beep frequency = CPUclk/2/Period = 30000000/Period
-{ 
+{
   uint32_t Pulse = ((uint32_t)Period * (uint32_t)Duty + 0x0080) >> 8; // PWM pulse length
   if(Pulse) TIM_OC4PolarityConfig(TIM4, TIM_OCPolarity_High);
        else TIM_OC4PolarityConfig(TIM4, TIM_OCPolarity_Low);
@@ -68,4 +68,3 @@ void Beep_Note(uint8_t Note) // Note = VVOONNNN: VV = Volume, OO=Octave, NNNN=No
   uint16_t Period = NotePeriod[Note];
   if(Octave) { Period += 1<<(Octave-1); Period >>= Octave; }
   Beep(Period, Duty, DoubleAmpl); }
-

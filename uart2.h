@@ -19,7 +19,7 @@ char inline UART2_RxChar(void)    { return (uint8_t)USART_ReceiveData(USART2); }
 
 inline void UART2_TxKick(void) { USART_ITConfig(USART2, USART_IT_TXE, ENABLE); }
 
-int UART2_Read(uint8_t &Byte);
+int  UART2_Read(uint8_t &Byte);
 void UART2_Write(char Byte);
 
 #endif // __UART2_H__

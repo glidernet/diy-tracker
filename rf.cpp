@@ -5,16 +5,13 @@
 #include <semphr.h>
 #include <queue.h>
 
-#include "stm32f10x_gpio.h"
-#include "stm32f10x_rcc.h"
-#include "stm32f10x_spi.h"
+#include "hal.h"
 
 #include "rf.h"                            // RF (this) task
 #include "ctrl.h"                          // CTRL task
 #include "gps.h"                           // GPS task
 #include "knob.h"
 
-// #include "rfm69.h"                         // RFM69(H)W RF chip
 #include "rfm.h"                           // RFM69 and later RFM95
 #include "freqplan.h"                      // frequency hopping pattern
 
@@ -25,7 +22,6 @@
 #include "fifo.h"
 
 #include "uart1.h"                         // console UART
-#include "adc.h"
 
 #include "ogn.h"                           // OGN packet
 
@@ -33,112 +29,9 @@
 
 #include "main.h"
 
-#include "spi1.h"       // SPI1 basic calls
-
 #include "lowpass2.h"
 
 // ================================================================================
-
-// function to control and read status of the RF chip
-
-#ifdef WITH_OGN_CUBE_1 // OGN-CUBE-1
-
-// PB1: RF chip RESET: active HIGH for RFM69, active low for RFM95
-#ifdef SPEEDUP_STM_LIB
-inline void RFM_RESET_High  (void) { GPIOB->BSRR = GPIO_Pin_1; }
-inline void RFM_RESET_Low   (void) { GPIOB->BRR  = GPIO_Pin_1; }
-#else
-inline void RFM_RESET_High  (void) { GPIO_SetBits  (GPIOB, GPIO_Pin_1); }
-inline void RFM_RESET_Low   (void) { GPIO_ResetBits(GPIOB, GPIO_Pin_1); }
-#endif
-
-// PB0: RF chip SELECT: active LOW
-#ifdef SPEEDUP_STM_LIB
-inline void RFM_Select  (void) { GPIOB->BRR  = GPIO_Pin_0; }
-inline void RFM_Deselect(void) { GPIOB->BSRR = GPIO_Pin_0; }
-#else
-inline void RFM_Select  (void) { GPIO_WriteBit(GPIOB, GPIO_Pin_0, Bit_RESET); }
-inline void RFM_Deselect(void) { GPIO_WriteBit(GPIOB, GPIO_Pin_0, Bit_SET  ); }
-#endif
-
-// PB2: RF chip IRQ: active HIGH
-#ifdef SPEEDUP_STM_LIB
-inline bool RFM_DIO0_isOn(void)   { return (GPIOB->IDR & GPIO_Pin_2) != 0; }
-#else
-inline bool RFM_DIO0_isOn(void)   { return GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_2) != Bit_RESET; }
-#endif
-
-#else // classical DIY-Tracker
-
-// RF chip RESET: active HIGH for RFM69 and LOW for RFM95
-#ifdef SPEEDUP_STM_LIB
-inline void RFM_RESET_High  (void) { GPIOB->BSRR = GPIO_Pin_5; }
-inline void RFM_RESET_Low   (void) { GPIOB->BRR  = GPIO_Pin_5; }
-#else
-inline void RFM_RESET_High  (void) { GPIO_SetBits  (GPIOB, GPIO_Pin_5); }
-inline void RFM_RESET_Low   (void) { GPIO_ResetBits(GPIOB, GPIO_Pin_5); }
-#endif
-
-// PB4: RF chip IRQ: active HIGH
-#ifdef SPEEDUP_STM_LIB
-inline bool RFM_DIO0_isOn(void)   { return (GPIOB->IDR & GPIO_Pin_4) != 0; }
-// inline bool RFM_DIO4_isOn(void)   { return (GPIOB->IDR & GPIO_Pin_3) != 0; }
-#else
-inline bool RFM_DIO0_isOn(void)   { return GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_4) != Bit_RESET; }
-// inline bool RFM_DIO4_isOn(void)   { return GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_3) != Bit_RESET; }
-#endif
-
-#endif
-
-#ifdef WITH_RFM95 // RESET is active LOW
-static void RFM_RESET(uint8_t On)
-{ if(On) RFM_RESET_Low();
-    else RFM_RESET_High(); }
-#endif
-
-#ifdef WITH_RFM69 // RESET is active HIGH
-static void RFM_RESET(uint8_t On)
-{ if(On) RFM_RESET_High();
-    else RFM_RESET_Low(); }
-#endif
-
-void RFM_GPIO_Configuration(void)
-{ GPIO_InitTypeDef  GPIO_InitStructure;
-
-  RCC_APB2PeriphClockCmd (RCC_APB2Periph_GPIOB /* | RCC_APB2Periph_AFIO */, ENABLE);
-
-#ifdef WITH_OGN_CUBE_1
-  GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_2;                        // PB2 = DIO0 RFM69/95
-  GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_IN_FLOATING;
-  // GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_IPU;
-  GPIO_Init(GPIOB, &GPIO_InitStructure);
-
-  GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_0 | GPIO_Pin_1;            // PB1 = RESET, PB0 = SS
-  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_2MHz;
-  GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_Out_PP;
-  GPIO_Init(GPIOB, &GPIO_InitStructure);
-#else
-  GPIO_InitStructure.GPIO_Pin   = /* GPIO_Pin_3 | */ GPIO_Pin_4;      // PB4 = DIO0 and PB3 = DIO4 of RFM69
-  GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_IN_FLOATING;
-  // GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_IPU;
-  GPIO_Init(GPIOB, &GPIO_InitStructure);
-
-  GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_5;                         // PB5 = RESET
-  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_2MHz;
-  GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_Out_PP;
-  GPIO_Init(GPIOB, &GPIO_InitStructure);
-#endif
-}
-
-// RF chip interface for OGN-CUBE-1:
-// RF.SS    <- PB 0
-// RF.RESET <- PB 1
-// RF.DIO0  -> PB 2
-// RF.SCK   <- PA 5 SPI1.SCK
-// RF.MISO  -> PA 6 SPI1.MISO
-// RF.MOSI  <- PA 7 SPI1.MOSI
-
-// ==================================================================
 
 // OGN SYNC:       0x0AF3656C encoded in Manchester
 static const uint8_t OGN_SYNC[8] = { 0xAA, 0x66, 0x55, 0xA5, 0x96, 0x99, 0x96, 0x5A };
@@ -158,7 +51,7 @@ static LDPC_Decoder      Decoder;     // error corrector for the OGN Gallager co
 static uint16_t TX_Credit  =0;        // counts transmitted packets vs. time to avoid using more than 1% of the time
 
 static uint8_t RX_OGN_Packets=0;      // [packets] counts received packets
-static uint8_t RX_Idle   =0;      // [sec]     time the receiver did not get any packets
+// static uint8_t RX_Idle   =0;      // [sec]     time the receiver did not get any packets
 static LowPass2<uint32_t, 4,2,4> RX_RSSI;   // low pass filter to average the RX noise
 
 static Delay<uint8_t, 64> RX_OGN_CountDelay;
@@ -290,7 +183,7 @@ static uint8_t ReceivePacket(void)                           // see if a packet 
           xSemaphoreGive(Log_Mutex);
 #endif
           if(!MyOwnPacket)
-          { Len=RxPacket->Packet.WritePFLAA(Line, LatDist, LonDist, RxPacket->Packet.DecodeAltitude()-GPS_Altitude/10); // print on the console as $PFLAA
+          { Len=RxPacket->Packet.WritePFLAA(Line, 0, LatDist, LonDist, RxPacket->Packet.DecodeAltitude()-GPS_Altitude/10); // print on the console as $PFLAA
             xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
             Format_String(CONS_UART_Write, Line, Len);
             xSemaphoreGive(CONS_Mutex); }
@@ -436,14 +329,9 @@ static void GetRelayPacket(void)                                 // prepare a pa
 void vTaskRF(void* pvParameters)
 {
                                           // set interface for the RF chip
-#ifdef WITH_OGN_CUBE_1                    // for OGN-CUBE-1
   TRX.Select       = RFM_Select;          // separate SS
   TRX.Deselect     = RFM_Deselect;
-#else                                     // for DIY-Tracker
-  TRX.Select       = SPI1_Select;         // standard SS of the SPI1
-  TRX.Deselect     = SPI1_Deselect;
-#endif
-  TRX.TransferByte = SPI1_TransferByte;
+  TRX.TransferByte = RFM_TransferByte;
   TRX.DIO0_isOn    = RFM_DIO0_isOn;
   TRX.RESET        = RFM_RESET;
 
@@ -457,10 +345,6 @@ void vTaskRF(void* pvParameters)
   RelayQueue.Clear();
 
   vTaskDelay(5);
-
-  // SPI1_Configuration();
-  // RFM69_GPIO_Configuration();
-  // ADC_Configuration();
 
   for( ; ; )
   { uint8_t ChipVersion = StartRFchip();
@@ -478,7 +362,7 @@ void vTaskRF(void* pvParameters)
   CurrPosPacket.clrReady();
   TX_Credit  = 0;    // count slots and packets transmitted: to keep the rule of 1% transmitter duty cycle
   RX_OGN_Packets = 0;    // count received packets per every second (two time slots)
-  RX_Idle    = 0;    // count receiver idle time (slots without any packets received)
+  // RX_Idle    = 0;    // count receiver idle time (slots without any packets received)
 
   RX_OGN_Count64 = 0;
   RX_OGN_CountDelay.Clear();
@@ -511,11 +395,13 @@ void vTaskRF(void* pvParameters)
           CurrPosPacket.Packet.Header.Emergency=0; CurrPosPacket.Packet.Header.Encrypted=0; CurrPosPacket.Packet.Header.RelayCount=0;
           CurrPosPacket.Packet.Header.Other=0; CurrPosPacket.Packet.calcAddrParity();    // rest of header
           Position->Encode(CurrPosPacket.Packet);                                        // encode position/altitude/speed/etc. from GPS position
-          CurrPosPacket.Packet.setStealth(Parameters.getStealth());
+          CurrPosPacket.Packet.Position.Stealth = Parameters.getStealth();
           CurrPosPacket.Packet.Position.AcftType = Parameters.getAcftType();             // aircraft-type
           CurrPosPacket.Packet.Whiten(); CurrPosPacket.calcFEC();                        // whiten and calculate FEC code
           CurrPosPacket.setReady();                                                      // mark packet as ready to go
           CurrStatPacket.Packet.HeaderWord=CurrPosPacket.Packet.HeaderWord;
+          CurrStatPacket.Packet.Status.Hardware=0;
+          CurrStatPacket.Packet.Status.Firmware=0;
           CurrStatPacket.Packet.Header.Other=1;
           Position->EncodeStatus(CurrStatPacket.Packet);
           TimeSinceNoPos=0;
@@ -539,7 +425,7 @@ void vTaskRF(void* pvParameters)
       PPM_Packet.calcFEC();
     }
 #endif
-
+    int16_t AverSpeed=GPS_AverageSpeed();
     uint32_t RxRssiSum=0; uint16_t RxRssiCount=0;                              // measure the average RSSI for lower frequency
     do
     { ReceivePacket();                                                         // keep checking for received packets
@@ -559,14 +445,11 @@ void vTaskRF(void* pvParameters)
     vTaskDelay(1);
     SetFreqPlan();
 
-    if(RX_Idle>=60)                                                            // if no reception within one minute
-    { StartRFchip();                                                           // reset and rewrite the RF chip config
-      RX_Idle=0; }
-
     // uint8_t TxSlotIdx=GPS_Sec%15;
     // uint8_t TxSlot0 = CurrPosPacket.Packet.getTxSlot(Idx  );
     // uint8_t TxSLot1 = CurrPosPacket.Packet.getTxSlot(Idx+1);
 
+    StartRFchip();
                                                                                // Note: on RFM95 temperature sens does not work in STANDBY
 #ifdef WITH_RFM69
     TRX.TriggerTemp();                                                         // trigger RF chip temperature readout
@@ -575,17 +458,26 @@ void vTaskRF(void* pvParameters)
     int8_t ChipTemp= 165-TRX.ReadTemp();                                       // read RF chip temperature
 
     xSemaphoreTake(ADC1_Mutex, portMAX_DELAY);
-    uint16_t MCU_Vtemp = ADC1_Read(ADC_Channel_TempSensor);                    // T = 25+(V25-Vtemp)/Avg_Slope; V25=1.43+/-0.1V, Avg_Slope=4.3+/-0.3mV/degC
-    uint16_t MCU_Vref  = ADC1_Read(ADC_Channel_Vrefint);                       // VDD = 1.2*4096/Vref
-             MCU_Vtemp += ADC1_Read(ADC_Channel_TempSensor);                   // measure again and average
-             MCU_Vref  += ADC1_Read(ADC_Channel_Vrefint);
+    uint16_t MCU_Vtemp  = ADC_Read_MCU_Vtemp();                                // T = 25+(V25-Vtemp)/Avg_Slope; V25=1.43+/-0.1V, Avg_Slope=4.3+/-0.3mV/degC
+    uint16_t MCU_Vref   = ADC_Read_MCU_Vref();                                 // VDD = 1.2*4096/Vref
+             MCU_Vtemp += ADC_Read_MCU_Vtemp();                                // measure again and average
+             MCU_Vref  += ADC_Read_MCU_Vref();
+#ifdef WITH_BATT_SENSE
+    uint16_t Vbatt       = ADC_Read_Vbatt();                                   // measure voltage on PB1
+             Vbatt      += ADC_Read_Vbatt();
+#endif
     xSemaphoreGive(ADC1_Mutex);
     int16_t MCU_Temp = -999;
+    uint16_t MCU_VCC = 0;
     if(MCU_Vref)
     { MCU_Temp = 250 + ( ( ( (int32_t)1430 - ((int32_t)1200*(int32_t)MCU_Vtemp+(MCU_Vref>>1))/MCU_Vref )*(int32_t)37 +8 )>>4); // [0.1degC]
-      MCU_Vref = ( ((uint32_t)240<<12)+(MCU_Vref>>1))/MCU_Vref; }              // [0.01V]
-    CurrStatPacket.Packet.EncodeVoltage(((MCU_Vref<<4)+12)/25)  ;              // [1/64V]  write supply voltage to the status packet
+      MCU_VCC  = ( ((uint32_t)240<<12)+(MCU_Vref>>1))/MCU_Vref; }              // [0.01V]
+    CurrStatPacket.Packet.EncodeVoltage(((MCU_VCC<<4)+12)/25);                 // [1/64V]  write supply voltage to the status packet
     CurrStatPacket.Packet.Status.RadioNoise = RX_Rssi;                         // [-0.5dBm] write radio noise to the status packet
+#ifdef WITH_BATT_SENSE
+    if(MCU_Vref)
+      CurrStatPacket.Packet.EncodeVoltage(((int32_t)154*(int32_t)Vbatt+(MCU_Vref>>1))/MCU_Vref); // [1/64V] battery voltage assuming 1:1 divider form battery to PB1
+#endif
     if(CurrStatPacket.Packet.Status.Pressure==0) CurrStatPacket.Packet.EncodeTemperature(MCU_Temp);
     CurrStatPacket.Packet.Status.TxPower = Parameters.getTxPower()-4;
     uint16_t RxRate = RX_OGN_Count64+1;
@@ -615,7 +507,7 @@ void vTaskRF(void* pvParameters)
       { Line[Len++]=',';
         Len+=Format_SignDec(Line+Len, MCU_Temp, 2, 1);
         Line[Len++]=',';
-        Len+=Format_UnsDec(Line+Len, MCU_Vref, 3, 2); }
+        Len+=Format_UnsDec(Line+Len, MCU_VCC, 3, 2); }
 
       Len+=NMEA_AppendCheckCRNL(Line, Len);                                    // append NMEA check-sum and CR+NL
       // LogLine(Line);
@@ -629,8 +521,8 @@ void vTaskRF(void* pvParameters)
       Format_String(Log_Write, Line, Len);                                     // send the NMEA out to the log file
       xSemaphoreGive(Log_Mutex);
 #endif
-      if(RX_OGN_Packets) RX_Idle=0;
-                   else  RX_Idle++;
+      // if(RX_OGN_Packets) RX_Idle=0;
+      //              else  RX_Idle++;
       RX_OGN_Packets=0;                                                        // clear th ereceived packet count
     }
 

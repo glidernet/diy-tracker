@@ -33,7 +33,7 @@ void ADC_Configuration(void)
   GPIO_Init(GPIOB, &GPIO_InitStructure);                                // for Port B
 #endif
 
-#ifdef WITH_BAT_SENSE
+#ifdef WITH_BATT_SENSE
   GPIO_InitTypeDef  GPIO_InitStructure;
   GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_1;                           // Pin #1
   GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_AIN;                        // as analog input (battery voltage sense)

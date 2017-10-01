@@ -32,6 +32,11 @@ class UBX_RxMsg // receiver for the UBX sentences
    void CheckPass(uint8_t Byte) { CheckA+=Byte; CheckB+=CheckA; } // pass a byte through the checksum
 
   public:
+   void RecalcCheck(void)
+   { CheckA=0; CheckB=0;
+     CheckPass(Class); CheckPass(ID); CheckPass(Bytes); CheckPass(0x00);
+     for(uint8_t Idx=0; Idx<Bytes; Idx++) CheckPass(Byte[Idx]); }
+
    inline void Clear(void) { Idx=0; State=0; CheckA=0; CheckB=0; }
 
    uint8_t isLoading(void) const
@@ -41,7 +46,7 @@ class UBX_RxMsg // receiver for the UBX sentences
      { return State&0x02; }
 
    void ProcessByte(uint8_t RxByte) // pass all bytes through this call and it will build the frame
-     { 
+     {
        if(isComplete()) Clear(); // if already a complete frame, clear it
        switch(Idx)
        { case 0:  // expect SyncL
@@ -91,6 +96,23 @@ class UBX_RxMsg // receiver for the UBX sentences
      (*SendByte)(CheckB);
    }
 
+   static void SendPoll(uint8_t Class, uint8_t ID, void (*SendByte)(char))
+   { (*SendByte)(SyncL);
+     (*SendByte)(SyncH);
+     (*SendByte)(Class);
+     (*SendByte)(ID);
+     (*SendByte)(0x00);
+     (*SendByte)(0x00);
+     uint8_t CheckA = Class;
+     uint8_t CheckB = CheckA;
+     CheckA += ID;
+     CheckB += CheckA;
+     CheckB += CheckA;
+     CheckB += CheckA;
+     (*SendByte)(CheckA);
+     (*SendByte)(CheckB);
+   }
+
    bool isNAV(void) const { return Class==0x01; }
    bool isCFG(void) const { return Class==0x06; }
    bool isACK(void) const { return Class==0x05; }
@@ -99,8 +121,10 @@ class UBX_RxMsg // receiver for the UBX sentences
    bool isNAV_STATUS (void) const { return isNAV() && (ID==0x03); }
    bool isNAV_DOP    (void) const { return isNAV() && (ID==0x04); }
    bool isNAV_VELNED (void) const { return isNAV() && (ID==0x12); }
+   bool isNAV_TIMEGPS(void) const { return isNAV() && (ID==0x20); }
    bool isNAV_TIMEUTC(void) const { return isNAV() && (ID==0x21); }
 
+   bool isCFG_PRT    (void) const { return isCFG() && (ID==0x00); }
 } ;
 
 class UBX_NAV_POSLLH  // 0x01 0x02
@@ -183,12 +207,46 @@ class UBX_CFG_PRT     // 0x06 0x00
    uint8_t  portID;       // 1 or 2
    uint8_t  reserved0;
    uint16_t txReady;
-    int32_t mode;         // 
+    int32_t mode;         // 00 10x x 11 x 1 xxxx => 0x08D0
    uint32_t baudRate;     // [bps]
     int16_t inProtoMask;  // bit 0:UBX, bit 1:NMEA
     int16_t outProtoMask; // bit 0:UBX, bit 1:NMEA
    uint16_t reserved4;
    uint16_t reserved5;
+} ;
+
+class UBX_CFG_MSG         // 0x06 0x01
+{ public:
+   uint8_t msgClass;
+   uint8_t msgID;
+   uint8_t rate;          // message send rate
+} ;
+
+class UBX_CFG_RATE        // 0x06 0x08
+{ public:
+   uint16_t measRate;     // [ms] measurement rate
+   uint16_t navRate;      // [cycles] = 1
+   uint16_t timeRef;      // 0=UTC, 1=GPS
+} ;
+
+class NAV_CFG_NAVS
+{ public:
+   uint16_t mask;       // bit #0 = apply dynamic mode settings, #1 = apply min. elev. settings, #2 = apply fix mode settings
+   uint8_t  dynMode1;   // 6 = airborne 1g, 7 = 2g, 8 = 4g
+   uint8_t  fixMode;    // 1=2D only, 2=3D only, 3=auto 2/3D
+   int32_t  fixAlt;     // [0.01m]
+  uint32_t  fixAltVar;  // [0.001m]
+   int8_t   minElev;    // [deg] minimum satelite elevation
+  uint8_t   drLimit;    // [sec] Dead Reconning time limit
+  uint16_t  pDop;
+  uint16_t  tDop;
+  uint16_t  pAcc;       // [m]
+  uint16_t  tAcc;       // [m]
+  uint8_t   staticHoldThres; // [cm/s]
+  uint8_t   dgpsTimeout;     // [s]
+  uint32_t  reserved2;
+  uint32_t  reserved3;
+  uint32_t  reserved4;
 } ;
 
 #endif // __UBX_H__

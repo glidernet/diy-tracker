@@ -1,11 +1,16 @@
-#include "FreeRTOS.h"
-#include "task.h"
+#include "hal.h"
+
+#include "hal.h"
+
+#include <FreeRTOS.h>
+#include <task.h>
+#include <semphr.h>
+#include <queue.h>
 
 #include "parameters.h"
 
 #include "sens.h"
 
-#include "uart1.h"
 #include "main.h"
 #include "ctrl.h"
 #include "gps.h"
@@ -74,7 +79,7 @@ static Delay<int32_t, 8>        PressDelay; // 4-second delay for long-term clim
 
 static char Line[64];                       // line to prepare the barometer NMEA sentence
 
-static bool InitBaro()
+static uint8_t InitBaro()
 { Baro.Bus=BARO_I2C;
   uint8_t Err=Baro.CheckID();
   if(Err==0) Err=Baro.ReadCalib();
@@ -86,7 +91,7 @@ static bool InitBaro()
   if(Err==0) Err=Baro.Acquire();
   if(Err==0) { Baro.Calculate(); }
 #endif
-  return Err==0; }
+  return Err==0 ? Baro.ADDR:0; }
 
 static void ProcBaro()
 {
@@ -212,7 +217,6 @@ void vTaskSENS(void* pvParameters)
 //   VarioSound(0);
 // #endif
 
-#if defined(WITH_BMP180) || defined(WITH_BMP280)
   BaroPipe.Clear  (4*90000);
   BaroNoise.Set(12*16);                // guess the pressure noise level
 
@@ -221,22 +225,21 @@ void vTaskSENS(void* pvParameters)
   PressAver.Set(4*101300);             // [Pa] Pressure at sea level
   PressDelay.Clear(4*101300);
 
-  bool Detected = InitBaro();
-#endif // WITH_BMP180/BMP280
+  uint8_t Detected = InitBaro();
 
   xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
   Format_String(CONS_UART_Write, "TaskSENS:");
 
 #ifdef WITH_BMP180
   Format_String(CONS_UART_Write, " BMP180: ");
-  if(Detected) Format_String(CONS_UART_Write, " detected");
-         else  Format_String(CONS_UART_Write, " not there !");
+  if(Detected) { Format_String(CONS_UART_Write, " @"); Format_Hex(CONS_UART_Write, Detected); }
+         else  Format_String(CONS_UART_Write, " ?!");
 #endif
 
 #ifdef WITH_BMP280
-  Format_String(CONS_UART_Write, " BM2180: ");
-  if(Detected) Format_String(CONS_UART_Write, " detected");
-         else  Format_String(CONS_UART_Write, " not there !");
+  Format_String(CONS_UART_Write, " BM280: ");
+  if(Detected) { Format_String(CONS_UART_Write, " @"); Format_Hex(CONS_UART_Write, Detected); }
+         else  Format_String(CONS_UART_Write, " ?!");
 #endif
 
   Format_String(CONS_UART_Write, "\n");

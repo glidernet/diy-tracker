@@ -26,15 +26,18 @@ extern TickType_t PPS_TickCount;            // [ms] time since the most recent r
 uint16_t PPS_Phase(void);                   // [ms]
 
 #ifdef WITH_PPS_IRQ
-extern TickType_t PPS_IRQ_TickCount;
-extern uint32_t PPS_IRQ_TickTime;
-extern  int32_t PPS_IRQ_TickTimeDiff;
-extern uint32_t PPS_IRQ_Period;
-extern LowPass2<int32_t,6,4,8> PPS_IRQ_AverPeriod;
+// extern TickType_t PPS_IRQ_TickCount;
+// extern uint32_t   PPS_IRQ_TickTime;
+// extern  int32_t   PPS_IRQ_TickCountDiff;
+// extern  int32_t   PPS_IRQ_TickTimeDiff;
+extern  int32_t   PPS_IRQ_Correction;
+// extern LowPass2<int32_t,6,4,8> PPS_IRQ_AverPeriod;
 #endif
 
 GPS_Position *GPS_getPosition(void);
 GPS_Position *GPS_getPosition(int8_t Sec);
+
+int16_t GPS_AverageSpeed(void);             // [0.1m/s] calc. average speed based on most recent GPS positions
 
 // extern xQueueHandle xQueuePacket;
 

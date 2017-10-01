@@ -1,4 +1,24 @@
 
+// OGN frequencies for Europe: 868.2 and 868.4 MHz
+// static const uint32_t OGN_BaseFreq  = 868200000; // [Hz] base frequency
+// static const uint32_t OGN_ChanSpace =   0200000; // [Hz] channel spacing
+
+// OGN frequencies for Australia: 917.0 base channel, with 0.4MHz channel raster and 24 hopping channels
+// static const uint32_t OGN_BaseFreq  = 921400000; // [Hz] base frequency
+// static const uint32_t OGN_ChanSpace =    400000; // [Hz] channel spacing
+
+// static const double    XtalFreq = 32e6;        // [MHz] RF chip crystal frequency
+//
+// static const uint32_t BaseFreq  = floor(OGN_BaseFreq /(XtalFreq/(1<<19))+0.5); // conversion from RF frequency
+// static const uint32_t ChanSpace = floor(OGN_ChanSpace/(XtalFreq/(1<<19))+0.5); // to RF chip synthesizer setting
+
+// integer formula to convert from frequency to the RFM69 scheme: IntFreq = ((Freq<<16)+ 20)/ 40; where Freq is in [100kHz]
+//                                                            or: IntFreq = ((Freq<<14)+ 50)/100; where Freq is in [ 10kHz]
+//                                                            or: IntFreq = ((Freq<<12)+125)/250; where Freq is in [  1kHz]
+//                                                            or: IntFreq = ((Freq<<11)+ 62)/125; where Freq is in [  1kHz]
+// 32-bit arythmetic is enough in the above formulas
+
+
 #if WITH_RFM69
 
 #include "sx1231.h"            // register addresses and values for SX1231 = RFM69
@@ -47,31 +67,30 @@
 class RFM_TRX
 { public:                             // hardware access functions
 
-#ifdef USE_BLOCK_SPI
+#ifdef USE_BLOCK_SPI                                                    // SPI transfers in blocks, implicit control of the SPI-select
    void (*TransferBlock)(uint8_t *Data, uint8_t Len);
    static const size_t MaxBlockLen = 64;
    uint8_t Block_Buffer[MaxBlockLen];
 
-   uint8_t *Block_Read(uint8_t Len, uint8_t Addr)
+   uint8_t *Block_Read(uint8_t Len, uint8_t Addr)                       // read given number of bytes from given Addr
    { Block_Buffer[0]=Addr; memset(Block_Buffer+1, 0, Len);
      (*TransferBlock) (Block_Buffer, Len+1);
-     return  Block_Buffer+1; }
+     return  Block_Buffer+1; }                                          // return the pointer to the data read from the given Addr
 
-   uint8_t *Block_Write(const uint8_t *Data, uint8_t Len, uint8_t Addr)
+   uint8_t *Block_Write(const uint8_t *Data, uint8_t Len, uint8_t Addr) // write given number of bytes to given Addr
    { Block_Buffer[0] = Addr | 0x80; memcpy(Block_Buffer+1, Data, Len);
      // printf("Block_Write( [0x%02X, .. ], %d, 0x%02X) .. [0x%02X, 0x%02X, ...]\n", Data[0], Len, Addr, Block_Buffer[0], Block_Buffer[1]);
      (*TransferBlock) (Block_Buffer, Len+1);
      return  Block_Buffer+1; }
-#else
-   void (*Select)(void);              // activate SPI select
-   void (*Deselect)(void);            // desactivate SPI select
-   uint8_t (*TransferByte)(uint8_t);  // exchange one byte through SPI
+#else                                                                   // SPI transfers as single bytes, explicit control of the SPI-select
+   void (*Select)(void);                                                // activate SPI select
+   void (*Deselect)(void);                                              // desactivate SPI select
+   uint8_t (*TransferByte)(uint8_t);                                    // exchange one byte through SPI
 #endif
-   bool (*DIO0_isOn)(void);           // read DIO0 = packet is ready
+
+   bool (*DIO0_isOn)(void);                                              // read DIO0 = packet is ready
    // bool (*DIO4_isOn)(void);
-   void (*RESET)(uint8_t On);         // activate or desactivate the RF chip reset
-   // void (*RESET_On)(void);            // activate RF chip reset
-   // void (*RESET_Off)(void);           // desactive RF chip reset
+   void (*RESET)(uint8_t On);                                            // activate or desactivate the RF chip reset
 
                                       // the following are in units of the synthesizer with 8 extra bits of precision
    uint32_t BaseFrequency;            // [32MHz/2^19/2^8] base frequency = channel #0
