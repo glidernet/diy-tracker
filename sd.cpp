@@ -281,7 +281,12 @@ DSTATUS disk_initialize (BYTE drv)
   spi_slow();
   uint8_t ret, stat; uint32_t resp;
   ret = sd_reset();                if(ret!=0x01) return STA_NOINIT;
-  ret = sd_cmd8(resp, 0x000001AA); if( (ret!=0x01) || (resp!=0x000001AA) ) return STA_NOINIT;
+  ret = sd_cmd8(resp, 0x000001AA);
+  // Response 0x05 means "illigal command error". The card is SDC version 1 or
+  // MMC version 3. In this case we can continue with initialization
+  if (ret != 0x05) {
+    if( (ret!=0x01) || (resp!=0x000001AA) ) return STA_NOINIT;
+  }
   ret = sd_acmd(0x41, 0x40000000); if(ret)  return STA_NOINIT;
   ret = sd_set_sector_size(sector_size);  if(ret)  return STA_NOINIT;
   ret = sd_enable_crc();           if(ret)  return STA_NOINIT;
