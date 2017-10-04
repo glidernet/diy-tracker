@@ -99,9 +99,9 @@ static void ProcBaro()
 
     int16_t Sec  = 10*GPS_Sec;                                            // [0.1sec]
     uint16_t Phase = PPS_Phase();                                         // sync to the GPS PPS
-    if(Phase>=500) { Sec+=10; vTaskDelay(1000-Phase); }
+    if(Phase>=500) { Sec+=10; vTaskDelay(1000-Phase); }                   // wait till start of the measuring period
               else { Sec+= 5; vTaskDelay( 500-Phase); }
-    if(Sec>=600) Sec-=600;
+    if(Sec>=600) Sec-=600;                                                // [0.1sec] pressure measurement time
 
 #ifdef WITH_BMP180
     TickType_t Start=xTaskGetTickCount();
@@ -114,7 +114,7 @@ static void ProcBaro()
     for(uint8_t Idx=0; Idx<24; Idx++)
     { uint8_t Err=Baro.AcquireRawPressure();                              // take pressure measurement
       if(Err==0) { Baro.CalcPressure(); AverPress+=Baro.Pressure; AverCount++; } // sum-up average pressure
-      TickType_t Time=xTaskGetTickCount()-Start; if(Time>=450) break; }   // but no longer than 450ms to fit into 0.5 second slot
+      TickType_t Time=xTaskGetTickCount()-Start; if(Time>=250) break; }   // but no longer than 250ms to fit into 0.5 second slot
 
     if(AverCount==0) { PipeCount=0; return ; }                          // and we summed-up some measurements
     AverPress = ( (AverPress<<2) + (AverCount>>1) )/AverCount;          // [0.25Pa]] make the average
