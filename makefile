@@ -28,7 +28,6 @@ TCHAIN = arm-none-eabi
 # pps_irq       ... PPS signal makes an IRQ and the RTOS clock is adjusted in frequency to mathc the GPS (but not very precise)
 # gps_pps       ... GPS does deliver PPS, otherwise we get the timing from when the GPS starts sending serial data
 # gps_enable    ... GPS senses the "enable" line so it is possibly to shut it down
-# gps_autobaud  ... GPS tries various baud rates until valid data is received
 # gps_ubx_pass  ... pass UBX messages between the console and the GPS - for GPS configuration
 # gps_nmea_pass ... pass (P-private) NMEA messages between the console and the GPS - for GPS configuration
 
@@ -41,10 +40,10 @@ TCHAIN = arm-none-eabi
 
 # WITH_OPTS = blue_pill rfm69 beeper vario i2c1 bmp180 knob  relay config pps_irq # for regular tracker with a knob and BMP180 but no SD card
 # WITH_OPTS = blue_pill rfm69 beeper vario i2c1 bmp180 sdlog relay config # for the test system (no knob but the SD card)
-# WITH_OPTS = blue_pill rfm69 beeper vario i2c1 bmp180 lookout relay config gps_pps gps_enable gps_autobaud gps_ubx_pass gps_nmea_pass pps_irq
-# WITH_OPTS = maple_mini rfm69 i2c1 bmp180 relay config gps_pps pps_irq gps_enable gps_autobaud
-WITH_OPTS = blue_pill rfm69 beeper vario i2c1 bmp180 relay lookout config gps_pps pps_irq gps_enable gps_autobaud gps_ubx_pass gps_nmea_pass
-# WITH_OPTS = blue_pill rfm69 beeper vario i2c1 bmp180 relay config gps_pps pps_irq gps_enable gps_autobaud
+# WITH_OPTS = blue_pill rfm69 beeper vario i2c1 bmp180 lookout relay config gps_pps gps_enable gps_ubx_pass gps_nmea_pass pps_irq
+# WITH_OPTS = maple_mini rfm69 i2c1 bmp180 relay config gps_pps pps_irq gps_enable
+WITH_OPTS = blue_pill rfm69 beeper i2c1 bmp180 relay lookout config gps_pps pps_irq gps_enable gps_ubx_pass gps_nmea_pass
+# WITH_OPTS = blue_pill rfm69 beeper vario i2c1 bmp180 relay config gps_pps pps_irq gps_enable
 # WITH_OPTS = blue_pill rfm69 beeper relay config
 # WITH_OPTS = blue_pill rfm95 beeper vario i2c1 bmp180 relay config
 
@@ -189,10 +188,6 @@ endif
 
 ifneq ($(findstring gps_enable,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_GPS_ENABLE
-endif
-
-ifneq ($(findstring gps_autobaud,$(WITH_OPTS)),)
-  WITH_DEFS += -DWITH_GPS_AUTOBAUD
 endif
 
 ifneq ($(findstring gps_ubx_pass,$(WITH_OPTS)),)

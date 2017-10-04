@@ -23,21 +23,22 @@ class UBX_RxMsg // receiver for the UBX sentences
    uint8_t  Bytes;                     // number of bytes in the packet (excl. head and tail)
 
   private:
-   uint8_t Padding;                  // just to make the structure size be a multiple of 4-bytes
-   uint8_t State;                    // bits: 0:loading, 1:complete, 2:locked,
-   uint8_t Idx;                      // loading index
+   uint8_t Padding;                    // just to make the structure size be a multiple of 4-bytes
+   uint8_t State;                      // bits: 0:loading, 1:complete, 2:locked,
+   uint8_t Idx;                        // loading index
 
-   uint8_t CheckA;                   // UBX check sum (two bytes)
+   uint8_t CheckA;                     // UBX check sum (two bytes)
    uint8_t CheckB;
+   void CheckInit(void) { CheckA=0; CheckB=0; }                   // initialize the checksum
    void CheckPass(uint8_t Byte) { CheckA+=Byte; CheckB+=CheckA; } // pass a byte through the checksum
 
   public:
    void RecalcCheck(void)
-   { CheckA=0; CheckB=0;
+   { CheckInit();
      CheckPass(Class); CheckPass(ID); CheckPass(Bytes); CheckPass(0x00);
      for(uint8_t Idx=0; Idx<Bytes; Idx++) CheckPass(Byte[Idx]); }
 
-   inline void Clear(void) { Idx=0; State=0; CheckA=0; CheckB=0; }
+   inline void Clear(void) { Idx=0; State=0; CheckInit(); }
 
    uint8_t isLoading(void) const
      { return State&0x01; }
@@ -103,19 +104,19 @@ class UBX_RxMsg // receiver for the UBX sentences
      (*SendByte)(ID);
      (*SendByte)(0x00);
      (*SendByte)(0x00);
-     uint8_t CheckA = Class;
+     uint8_t CheckA = Class;   // pass Class through check sum
      uint8_t CheckB = CheckA;
-     CheckA += ID;
+     CheckA += ID;             // pass ID through check sum
      CheckB += CheckA;
-     CheckB += CheckA;
-     CheckB += CheckA;
-     (*SendByte)(CheckA);
+     CheckB += CheckA;         // pass 0x00
+     CheckB += CheckA;         // pass 0x00
+     (*SendByte)(CheckA);      // send the check sum
      (*SendByte)(CheckB);
    }
 
    bool isNAV(void) const { return Class==0x01; }
-   bool isCFG(void) const { return Class==0x06; }
    bool isACK(void) const { return Class==0x05; }
+   bool isCFG(void) const { return Class==0x06; }
 
    bool isNAV_POSLLH (void) const { return isNAV() && (ID==0x02); }
    bool isNAV_STATUS (void) const { return isNAV() && (ID==0x03); }
@@ -124,7 +125,11 @@ class UBX_RxMsg // receiver for the UBX sentences
    bool isNAV_TIMEGPS(void) const { return isNAV() && (ID==0x20); }
    bool isNAV_TIMEUTC(void) const { return isNAV() && (ID==0x21); }
 
+   bool isACK_NAK    (void) const { return isACK() && (ID==0x00); }
+   bool isACK_ACK    (void) const { return isACK() && (ID==0x01); }
+
    bool isCFG_PRT    (void) const { return isCFG() && (ID==0x00); }
+   bool isCFG_NAV5   (void) const { return isCFG() && (ID==0x24); }
 } ;
 
 class UBX_NAV_POSLLH  // 0x01 0x02
@@ -229,19 +234,19 @@ class UBX_CFG_RATE        // 0x06 0x08
    uint16_t timeRef;      // 0=UTC, 1=GPS
 } ;
 
-class NAV_CFG_NAVS
+class UBX_CFG_NAV5        // 0x06 0x24
 { public:
-   uint16_t mask;       // bit #0 = apply dynamic mode settings, #1 = apply min. elev. settings, #2 = apply fix mode settings
-   uint8_t  dynMode1;   // 6 = airborne 1g, 7 = 2g, 8 = 4g
-   uint8_t  fixMode;    // 1=2D only, 2=3D only, 3=auto 2/3D
-   int32_t  fixAlt;     // [0.01m]
-  uint32_t  fixAltVar;  // [0.001m]
-   int8_t   minElev;    // [deg] minimum satelite elevation
-  uint8_t   drLimit;    // [sec] Dead Reconning time limit
+   uint16_t mask;         // bit #0 = apply dynamic mode settings, #1 = apply min. elev. settings, #2 = apply fix mode settings
+   uint8_t  dynModel;     // 6 = airborne 1g, 7 = 2g, 8 = 4g
+   uint8_t  fixMode;      // 1=2D only, 2=3D only, 3=auto 2/3D
+   int32_t  fixAlt;       // [0.01m]
+  uint32_t  fixAltVar;    // [0.001m]
+   int8_t   minElev;      // [deg] minimum satelite elevation
+  uint8_t   drLimit;      // [sec] Dead Reconning time limit
   uint16_t  pDop;
   uint16_t  tDop;
-  uint16_t  pAcc;       // [m]
-  uint16_t  tAcc;       // [m]
+  uint16_t  pAcc;         // [m]
+  uint16_t  tAcc;         // [m]
   uint8_t   staticHoldThres; // [cm/s]
   uint8_t   dgpsTimeout;     // [s]
   uint32_t  reserved2;

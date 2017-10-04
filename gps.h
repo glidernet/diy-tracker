@@ -22,6 +22,23 @@ extern          uint16_t GPS_LatCosine;     // [1.0/(1<<12)] Latitude Cosine for
 extern          uint32_t GPS_TimeSinceLock; // [sec] time since GPS has a valid lock
 // extern           uint8_t GPS_FreqPlan;      // [] frequency (hopping) plan: 1 = Europe/Africa, 2 = USA/Canada, 3 = Australia/South America
 
+typedef union
+         { uint8_t  Flags;
+           struct
+           { bool       NMEA:1; // got at least one valid NMEA message
+             bool        UBX:1; // got at least one valid UBX message
+             bool        MAV:1; // got at least one valid MAV message
+             bool        PPS:1; // got at least one PPS signal
+             bool BaudConfig:1; // baudrate is configured
+             bool ModeConfig:1; // mode is configured
+             bool       Lock:1; // is locked
+           } ;
+         } Status;
+
+extern Status GPS_Status;
+
+uint32_t GPS_getBaudRate(void);             // [bps]
+
 extern TickType_t PPS_TickCount;            // [ms] time since the most recent rising edge of PPS pulse
 uint16_t PPS_Phase(void);                   // [ms]
 

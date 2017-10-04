@@ -16,10 +16,10 @@ class FlashParameters
     int8_t   RFchipTxPower;  // [dBm] highest bit set => HW module (up to +20dBm Tx power)
     int8_t   RFchipTempCorr; // [degC] correction to the temperature measured in the RF chip
    uint32_t  CONbaud;        // [bps] Console baud rate
-   uint32_t  GPSbaud;        // [bps] GPS baud rate
+   uint32_t  GPSbaud;        // [bps] target GPS baud rate
 
    // static const uint32_t Words=sizeof(FlashParameters)/sizeof(uint32_t);
-
+  public:
    uint32_t getAddress(void) const { return AcftID&0x00FFFFFF; }
    uint8_t getAddrType(void) const { return (AcftID>>24)&0x03; }
    uint8_t getAcftType(void) const { return (AcftID>>26)&0x0F; }
@@ -55,7 +55,7 @@ class FlashParameters
 #endif
     RFchipTempCorr =         0; // [degC]
     CONbaud        =    115200; // [bps]
-    GPSbaud        =      9600; // [bps]
+    GPSbaud        =     57600; // [bps]
   }
 
   uint32_t static CheckSum(const uint32_t *Word, uint32_t Words)                      // calculate check-sum of pointed data
@@ -108,10 +108,10 @@ class FlashParameters
     Line[Len++]='/';
     Len+=Format_SignDec(Line+Len, (int16_t)getTxPower());
     Len+=Format_String(Line+Len, "dBm");
-    Line[Len++]=' '; Len+=Format_SignDec(Line+Len, 10*(int32_t)RFchipFreqCorr, 1); Len+=Format_String(Line+Len, "Hz");
-    Len+=Format_String(Line+Len, " GPS:");
-    Len+=Format_UnsDec(Line+Len, GPSbaud);
-    Len+=Format_String(Line+Len, "bps\n");
+    Line[Len++]=' '; Len+=Format_SignDec(Line+Len, 10*(int32_t)RFchipFreqCorr, 1); Len+=Format_String(Line+Len, "Hz\n");
+    // Len+=Format_String(Line+Len, " GPS:");
+    // Len+=Format_UnsDec(Line+Len, GPSbaud);
+    // Len+=Format_String(Line+Len, "bps\n");
     Line[Len]=0;
     return Len; }
 

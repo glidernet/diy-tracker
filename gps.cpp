@@ -28,10 +28,6 @@ uint32_t   PPS_IRQ_TickTime;                        // [CPU tick] (fine) time of
  int32_t   PPS_IRQ_TickCountDiff;                   // [RTOS tick] diff.
  int32_t   PPS_IRQ_TickTimeDiff;                    // [CPU tick] diff. of (fine) times between PPS'es
  int32_t   PPS_IRQ_Correction=0;                    // [1/16 CPU tick]
-// int16_t   PPS_IRQ_PeriodDiff;                      // [CPU tick] time between two PPS'es
-// uint32_t PPS_IRQ_InitLoad;                          // [CPU tick] initial period of SysTick
-// uint32_t PPS_IRQ_InitPeriod;
-// LowPass2<int32_t,6,4,8> PPS_IRQ_PeriodCorrection;
 #endif
 
 #ifdef WITH_PPS_IRQ
@@ -53,37 +49,6 @@ static void PPS_IRQ(uint32_t TickCount, uint32_t TickTime)         // GPS PPS IR
   PPS_IRQ_TickCount = TickCount;
   PPS_IRQ_TickTime  = TickTime;
 }
-/*
-  { uint32_t Load=getSysTick_Reload();                             // [CPU tick] period of the SysTick - 1
-    uint32_t TickTime=Load-getSysTick_Count();                     // [CPU tick] what time after RTOS tick the PPS arrived
-    TickType_t TickCount = xTaskGetTickCountFromISR();             // [RTOS tick] RTOS tick counter
-    TickType_t TickSincePPS = TickCount-PPS_IRQ_TickCount;         // [RTOS tick] how many RTOS ticks after the previos PPS
-    PPS_IRQ_TickCount=TickCount;                                   //
-    if((TickSincePPS>900)&&(TickSincePPS<5100))                    // if this PPS between 0.9sec and 5.1sec after the previous PPS
-    { uint32_t SecsSincePPS=(TickSincePPS+500)/1000;               // [sec] number of seconds since previous PPS
-       int32_t TickTimeDiff=TickTime-PPS_IRQ_TickTime;             // [CPU tick] this is zero if the Xtal is exactly on frequency
-      if(SecsSincePPS==1) { PPS_IRQ_Period=TickSincePPS*(Load+1)+TickTimeDiff; PPS_IRQ_AverPeriod.Process(PPS_IRQ_Period-PPS_IRQ_InitPeriod); }
-      if(SecsSincePPS>1) TickTimeDiff/=SecsSincePPS;
-      PPS_IRQ_TickTimeDiff=TickTimeDiff;
-      int32_t LoadIncr=0;
-           if (TickTimeDiff >    500 ) LoadIncr++;
-      else if (TickTimeDiff < ( -500)) LoadIncr--;
-      // if(LoadIncr==0)
-      { int32_t TickPhaseDiff = TickTime-(Load>>1);
-             if (TickPhaseDiff>   1000 ) LoadIncr++;
-        else if (TickPhaseDiff< (-1000)) LoadIncr--;
-      }
-      if(LoadIncr!=0)
-      { Load+=LoadIncr;
-        if(abs((int32_t)(Load-PPS_IRQ_InitLoad))<8) setSysTick_Reload(Load);
-      }
-    }
-    else
-    {
-    }
-    PPS_IRQ_TickTime=TickTime;
-  }
-*/
 #endif
 
 // void Debug_Print(uint8_t Byte) { while(!UART1_TxEmpty()) taskYIELD(); UART1_TxChar(Byte); }
@@ -92,7 +57,7 @@ static NMEA_RxMsg  NMEA;                 // NMEA sentences catcher
 static UBX_RxMsg   UBX;                  // UBX messages catcher
 
 static GPS_Position Position[4];         // GPS position pipe
-static uint8_t      PosIdx;              // Pipe index
+static uint8_t      PosIdx;              // Pipe index, increments with every GPS position received
 
 static   TickType_t Burst_TickCount;     // [msec] TickCount when the data burst from GPS started
 
@@ -100,14 +65,26 @@ static   TickType_t Burst_TickCount;     // [msec] TickCount when the data burst
          uint32_t   GPS_TimeSinceLock;   // [sec] time since the GPS has a lock
 volatile  uint8_t   GPS_Sec=0;           // [sec] UTC time: second
 
-         uint32_t   GPS_UnixTime=0;      // [sec] UTC date/time in Unix format
-         uint32_t   GPS_FatTime=0;       // [sec] UTC date/time in FAT format
-          int32_t   GPS_Altitude=0;      // [0.1m] last valid altitude
-          int32_t   GPS_Latitude=0;
-          int32_t   GPS_Longitude=0;
-          int16_t   GPS_GeoidSepar=0;    // [0.1m]
-         uint16_t   GPS_LatCosine=0x3000;  //
+         uint32_t   GPS_UnixTime  = 0;    // [sec] UTC date/time in Unix format
+         uint32_t   GPS_FatTime   = 0;    // [sec] UTC date/time in FAT format
+          int32_t   GPS_Altitude  = 0;    // [0.1m] last valid altitude
+          int32_t   GPS_Latitude  = 0;    //
+          int32_t   GPS_Longitude = 0;    //
+          int16_t   GPS_GeoidSepar= 0;    // [0.1m]
+         uint16_t   GPS_LatCosine = 3000; //
 //          uint8_t   GPS_FreqPlan=0;      //
+
+         Status     GPS_Status;
+
+static const uint8_t  BaudRates=7;                                                                 // number of possible baudrates choices
+static       uint8_t  BaudRateIdx=0;                                                               // actual choice
+static const uint32_t BaudRate[BaudRates] = { 4800, 9600, 19200, 38400, 57600, 115200, 230400 } ;  // list of baudrate the autobaud scans through
+
+uint32_t GPS_getBaudRate (void) { return BaudRate[BaudRateIdx]; }
+uint32_t GPS_nextBaudRate(void) { BaudRateIdx++; if(BaudRateIdx>=BaudRates) BaudRateIdx=0; return GPS_getBaudRate(); }
+
+const uint32_t GPS_TargetBaudRate = 57600; // BaudRate[4]; // [bps] must be one of the baud rates known by the autbaud
+const uint8_t  GPS_dynModel       =     7; // for UBX GPS's: 6 = airborne with >1g, 7 = with >2g
 
 // ----------------------------------------------------------------------------
 
@@ -133,43 +110,16 @@ uint16_t PPS_Phase(void)                              //
 // ----------------------------------------------------------------------------
 
 static void GPS_PPS_On(uint8_t Delay=0)               // called on rising edge of PPS
-{ LED_PCB_Flash(50);
-  PPS_TickCount = xTaskGetTickCount()-Delay;
+{ static TickType_t PrevTickCount=0;
+  TickType_t TickCount = xTaskGetTickCount();
+  TickType_t Delta = TickCount-PrevTickCount;
+  PrevTickCount = TickCount;
+  if(abs(Delta-1000)>10) return;
+  PPS_TickCount=TickCount-Delay;
+  GPS_Status.PPS=1;
+  LED_PCB_Flash(50);
   uint8_t Sec=GPS_Sec; Sec++; if(Sec>=60) Sec=0; GPS_Sec=Sec;
-  GPS_UnixTime++;
-/*
-#ifdef WITH_PPS_IRQ
-  { // only to check SysTick
-  Format_String(CONS_UART_Write, "PPS_IRQ: ");
-  Format_UnsDec(CONS_UART_Write, (uint32_t)(xTaskGetTickCount()));
-  CONS_UART_Write(':');
-  Format_UnsDec(CONS_UART_Write, (SysTickPeriod-1) - getSysTick_Count());
-
-  CONS_UART_Write(' ');
-  Format_UnsDec(CONS_UART_Write, PPS_IRQ_TickCount);
-  CONS_UART_Write(':');
-  Format_UnsDec(CONS_UART_Write, PPS_IRQ_TickTime);
-
-  CONS_UART_Write(' ');
-  Format_SignDec(CONS_UART_Write, PPS_IRQ_TickCountDiff);
-  CONS_UART_Write(':');
-  Format_SignDec(CONS_UART_Write, PPS_IRQ_TickTimeDiff);
-
-  CONS_UART_Write(' ');
-  Format_SignDec(CONS_UART_Write, (10*PPS_IRQ_Correction+8)>>4, 1, 1);
-
-  // Format_UnsDec(CONS_UART_Write, getSysTick_Reload());
-  // CONS_UART_Write(' ');
-  // Format_UnsDec(CONS_UART_Write, PPS_IRQ_Period);
-  // CONS_UART_Write('/');
-  // Format_SignDec(CONS_UART_Write, PPS_IRQ_AverPeriod.getOutput());
-  // CONS_UART_Write(' ');
-  // Format_SignDec(CONS_UART_Write, (PPS_IRQ_AverPeriod.Out*100+128)>>8, 3, 2);
-  CONS_UART_Write('\r'); CONS_UART_Write('\n');
-  }
-#endif
-*/
-}
+  GPS_UnixTime++; }
 
 static void GPS_PPS_Off(void)                       // called on falling edge of PPS
 { }
@@ -177,7 +127,8 @@ static void GPS_PPS_Off(void)                       // called on falling edge of
 // ----------------------------------------------------------------------------
 
 static void GPS_LockStart(void)                     // called when GPS catches a lock
-{
+{ GPS_Status.Lock=1;
+/*
 #ifdef WITH_BEEPER
   if(KNOB_Tick)
   { Play(0x50, 100);
@@ -185,10 +136,12 @@ static void GPS_LockStart(void)                     // called when GPS catches a
     Play(0x52, 100);
     Play(0x12, 100); }
 #endif
+*/
 }
 
 static void GPS_LockEnd(void)                       // called when GPS looses a lock
-{
+{ GPS_Status.Lock=0;
+/*
 #ifdef WITH_BEEPER
   if(KNOB_Tick)
   { Play(0x52, 100);
@@ -196,6 +149,7 @@ static void GPS_LockEnd(void)                       // called when GPS looses a 
     Play(0x50, 100);
     Play(0x10, 100); }
 #endif
+*/
 }
 
 // ----------------------------------------------------------------------------
@@ -209,13 +163,27 @@ static void GPS_BurstStart(void)                                           // wh
 #ifndef WITH_GPS_PPS
   GPS_PPS_On(GPS_BurstDelay);                                              // if there is no PPS from GPS use the burst start to simulate the PPS with given delay.
 #endif
+  static uint16_t QueryWait=0;
+  if(GPS_Status.NMEA)                                                      // if there is communication with the GPS already
+  { if(QueryWait)
+    { QueryWait--; }
+    else
+    { if(!GPS_Status.ModeConfig)                                             // if GPS navigation mode is not done yet
+      { // Format_String(CONS_UART_Write, "CFG_NAV5 query...\n");
+        UBX_RxMsg::SendPoll(0x06, 0x24, GPS_UART_Write); }                   // send the query for the navigation mode setting
+      if(!GPS_Status.BaudConfig)                                             // if GPS baud config is not done yet
+      { // Format_String(CONS_UART_Write, "CFG_PRT query...\n");
+        UBX_RxMsg::SendPoll(0x06, 0x00, GPS_UART_Write); }                   // send the query for the port config to have a template configuration packet
+      QueryWait=300; }
+  }
+  else { QueryWait=0; }
 }
 
 static void GPS_BurstEnd(void)                                             // when GPS stops sending data on the serial port
-{ if(Position[PosIdx].Complete)                                        // position data complete
-  { if(Position[PosIdx].isTimeValid())
+{ if(Position[PosIdx].Complete)                                            // position data complete
+  { if(Position[PosIdx].isTimeValid())                                     // if time is valid already
     { GPS_Sec=Position[PosIdx].Sec;                                        // get the second - this is important for time in the OGN packets
-      if(Position[PosIdx].isDateValid())
+      if(Position[PosIdx].isDateValid())                                   // if date is valid as well
       { GPS_UnixTime=Position[PosIdx].getUnixTime(); GPS_FatTime=Position[PosIdx].getFatTime(); }
     }
     if(Position[PosIdx].isValid())                                         // position is complete and locked
@@ -231,10 +199,10 @@ static void GPS_BurstEnd(void)                                             // wh
       { GPS_LockStart(); }
       if(GPS_TimeSinceLock>2)
       { uint8_t PrevIdx=(PosIdx+2)&3;
-        /* int Delta = */ Position[PosIdx].calcDifferences(Position[PrevIdx]);
+        Position[PosIdx].calcDifferences(Position[PrevIdx]);
         LED_PCB_Flash(100); }
     }
-    else                                                                  // complete but not valid lock
+    else                                                                  // complete but no valid lock
     { if(GPS_TimeSinceLock) { GPS_LockEnd(); GPS_TimeSinceLock=0; }
     }
   }
@@ -251,7 +219,7 @@ static void GPS_BurstEnd(void)                                             // wh
   PosIdx=NextPosIdx;                                                      // advance the index
 }
 
-GPS_Position *GPS_getPosition(void)
+GPS_Position *GPS_getPosition(void)                                       // retunr most recent, valid GPS_Position
 { uint8_t PrevIdx=PosIdx;
   GPS_Position *PrevPos = Position+PrevIdx;
   if(PrevPos->Complete) return PrevPos;
@@ -260,7 +228,7 @@ GPS_Position *GPS_getPosition(void)
   if(PrevPos->Complete) return PrevPos;
   return 0; }
 
-GPS_Position *GPS_getPosition(int8_t Sec)
+GPS_Position *GPS_getPosition(int8_t Sec)                                // return the GPS_Position which corresponds to given Sec
 { for(uint8_t Idx=0; Idx<4; Idx++)
   { if(Sec==Position[Idx].Sec) return Position+Idx; }
   return 0; }
@@ -268,7 +236,8 @@ GPS_Position *GPS_getPosition(int8_t Sec)
 // ----------------------------------------------------------------------------
 
 static void GPS_NMEA(void)                                                 // when GPS gets a correct NMEA sentence
-{ LED_PCB_Flash(2);                                                        // Flash the LED for 2 ms
+{ GPS_Status.NMEA=1;
+  LED_PCB_Flash(2);                                                        // Flash the LED for 2 ms
   Position[PosIdx].ReadNMEA(NMEA);                                         // read position elements from NMEA
   if( NMEA.isP() || NMEA.isGxRMC() || NMEA.isGxGGA() || NMEA.isGxGSA() || NMEA.isGPTXT() )
   { static char CRNL[3] = "\r\n";
@@ -285,8 +254,15 @@ static void GPS_NMEA(void)                                                 // wh
   }
 }
 
+static void DumpUBX(void)
+{ Format_String(CONS_UART_Write, "UBX:");
+  for(uint8_t Idx=0; Idx<20; Idx++)
+  { CONS_UART_Write(' '); Format_Hex(CONS_UART_Write, UBX.Byte[Idx]); }
+  Format_String(CONS_UART_Write, "\n"); }
+
 static void GPS_UBX(void)                                                         // when GPS gets an UBX packet
-{
+{ GPS_Status.UBX=1;
+  LED_PCB_Flash(2);
 #ifdef WITH_GPS_UBX_PASS
   { xSemaphoreTake(CONS_Mutex, portMAX_DELAY);                                    // send ther UBX packet to the console
     UBX.Send(CONS_UART_Write);
@@ -295,6 +271,55 @@ static void GPS_UBX(void)                                                       
     // Format_Hex(CONS_UART_Write, UBX.ID);
     xSemaphoreGive(CONS_Mutex); }
 #endif
+  if(UBX.isCFG_PRT())                                                             // if port configuration
+  { class UBX_CFG_PRT *CFG = (class UBX_CFG_PRT *)UBX.Word;                       // create pointer to the packet content
+    // xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
+    // Format_String(CONS_UART_Write, "TaskGPS: CFG_PRT\n");
+    // DumpUBX();
+    // Format_Hex(CONS_UART_Write, CFG->portID);
+    // CONS_UART_Write(':');
+    // Format_UnsDec(CONS_UART_Write, CFG->baudRate);
+    // Format_String(CONS_UART_Write, "bps\n");
+    // xSemaphoreGive(CONS_Mutex);
+    if(CFG->baudRate==GPS_TargetBaudRate) GPS_Status.BaudConfig=1;                // if baudrate same as our target then declare the baud config is done
+    else                                                                          // otherwise use the received packet as the template
+    { CFG->baudRate=GPS_TargetBaudRate;                                           // set the baudrate to our target
+      UBX.RecalcCheck();                                                          // reclaculate the check sum
+      // xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
+      // Format_UnsDec(CONS_UART_Write, GPS_TargetBaudRate);
+      // Format_String(CONS_UART_Write, "bps\n");
+      // DumpUBX();
+      // xSemaphoreGive(CONS_Mutex);
+      UBX.Send(GPS_UART_Write);                                                   // send this UBX packet to the GPS
+    }
+  }
+  if(UBX.isCFG_NAV5())                                                            // Navigation config
+  { class UBX_CFG_NAV5 *CFG = (class UBX_CFG_NAV5 *)UBX.Word;
+    // xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
+    // Format_String(CONS_UART_Write, "TaskGPS: CFG_NAV5 ");
+    // Format_Hex(CONS_UART_Write, CFG->dynModel);
+    // Format_String(CONS_UART_Write, "\n");
+    // xSemaphoreGive(CONS_Mutex);
+    if(CFG->dynModel==GPS_dynModel) GPS_Status.ModeConfig=1;                      // dynamic model = 6 => Airborne with >1g acceleration
+    else
+    { CFG->dynModel=GPS_dynModel; CFG->mask = 0x01;                               //
+      UBX.RecalcCheck();                                                          // reclaculate the check sum
+      UBX.Send(GPS_UART_Write);                                                   // send this UBX packet
+    }
+  }
+/*
+  if(UBX.isACK())
+  { xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
+    Format_String(CONS_UART_Write, "TaskGPS: ACK_ ");
+    Format_Hex(CONS_UART_Write,  UBX.ID);
+    CONS_UART_Write(' ');
+    Format_Hex(CONS_UART_Write,  UBX.Byte[0]);
+    CONS_UART_Write(':');
+    Format_Hex(CONS_UART_Write,  UBX.Byte[1]);
+    Format_String(CONS_UART_Write, "\n");
+    xSemaphoreGive(CONS_Mutex);
+  }
+*/
 }
 
 // ----------------------------------------------------------------------------
@@ -326,20 +351,13 @@ static void GPS_UBX(void)                                                       
 
 // ----------------------------------------------------------------------------
 
-static const uint8_t BaudRates=7;
-static       uint8_t BaudRateIdx=1;
-static const uint32_t BaudRate[BaudRates] = { 4800, 9600, 19200, 38400, 57600, 115200, 230400 } ;
-
 #ifdef __cplusplus
   extern "C"
 #endif
 void vTaskGPS(void* pvParameters)
 {
+  GPS_Status.Flags = 0;
 #ifdef WITH_PPS_IRQ
-  // PPS_IRQ_InitLoad = getSysTick_Reload();
-  // PPS_IRQ_InitPeriod = 1000*(PPS_IRQ_InitLoad+1);
-  // PPS_IRQ_Period = PPS_IRQ_InitPeriod;
-  // PPS_IRQ_AverPeriod.Set(0);
   GPS_PPS_IRQ_Callback = PPS_IRQ;
 #endif
 
@@ -356,26 +374,28 @@ void vTaskGPS(void* pvParameters)
   // Format_String(GPS_UART_Write, UBX_SetBaudrate_115200);
 
   int Burst=(-1);                                                         // GPS transmission ongoing or line is idle ?
-  { int LineIdle=0;                                                       // counts idle time for the GPS data
-    int NoValidData=0;                                                    // count time without valid data (to decide to change baudrate)
+  { int LineIdle=0;                                                       // [ms] counts idle time for the GPS data
+    int NoValidData=0;                                                    // [ms] count time without valid data (to decide to change baudrate)
     int PPS=0;
     NMEA.Clear(); UBX.Clear();                                            // scans GPS input for NMEA and UBX frames
     for(uint8_t Idx=0; Idx<4; Idx++)
       Position[Idx].Clear();
     PosIdx=0;
-    // PktIdx=0;
 
-    for( ; ; )                                                             // every milisecond (RTOS time tick)
-    { vTaskDelay(1);                                                       // wait for the next time tick
+    TickType_t RefTick = xTaskGetTickCount();
+    for( ; ; )                                                              // every milisecond (RTOS time tick)
+    { vTaskDelay(1);                                                        // wait for the next time tick (but apparently it can wait more than one OS tick)
+      TickType_t NewTick = xTaskGetTickCount();
+      TickType_t Delta = NewTick-RefTick; RefTick=NewTick;
 #ifdef WITH_GPS_PPS
-      if(GPS_PPS_isOn()) { if(!PPS) { PPS=1; GPS_PPS_On();  } }            // monitor GPS PPS signal
-                    else { if( PPS) { PPS=0; GPS_PPS_Off(); } }            // and call handling calls
+      if(GPS_PPS_isOn()) { if(!PPS) { PPS=1; GPS_PPS_On();  } }             // monitor GPS PPS signal
+                    else { if( PPS) { PPS=0; GPS_PPS_Off(); } }             // and call handling calls
 #endif
-      LineIdle++;                                                           // count idle time
+      LineIdle+=Delta;                                                      // count idle time
+      NoValidData+=Delta;                                                   // count time without any valid NMEA nor UBX packet
       for( ; ; )
       { uint8_t Byte; int Err=GPS_UART_Read(Byte); if(Err<=0) break;        // get Byte from serial port
         LineIdle=0;                                                         // if there was a byte: restart idle counting
-        NoValidData++;
         NMEA.ProcessByte(Byte); UBX.ProcessByte(Byte);                      // process through the NMEA interpreter
         if(NMEA.isComplete())                                               // NMEA completely received ?
         { if(NMEA.isChecked()) { GPS_NMEA(); NoValidData=0; }               // NMEA check sum is correct ?
@@ -386,26 +406,25 @@ void vTaskGPS(void* pvParameters)
       if(LineIdle==0)                                                        // if any bytes were received ?
       { if(Burst==0) GPS_BurstStart();                                       // burst started
         Burst=1; }
-      else if(LineIdle>10)                                                   // if GPS sends no more data for 10 time ticks
+      else if(LineIdle>=10)                                                  // if GPS sends no more data for 10 time ticks
       { if(Burst>0)                                                          // if still in burst
         { GPS_BurstEnd();                                                    // burst just ended
-        } else if(LineIdle>1000)                                             // if idle for more than 1 sec
-	{ }
+        } else if(LineIdle>=1000)                                            // if idle for more than 1 sec
+	{ GPS_Status.Flags=0; }
         Burst=0;
       }
-#ifdef WITH_GPS_AUTOBAUD
-      if(NoValidData>1000)                                                   // decide to switch the baudrate
-      { BaudRateIdx++; if(BaudRateIdx>=BaudRates) BaudRateIdx=0;
-        uint32_t NewBaudRate = BaudRate[BaudRateIdx];
+
+      if(NoValidData>=1000)                                                  // if no valid data from GPS for 1sec, then decide to switch the baudrate
+      { GPS_Status.Flags=0;
+        uint32_t NewBaudRate = GPS_nextBaudRate();
         xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
         Format_String(CONS_UART_Write, "TaskGPS: switch to ");
         Format_UnsDec(CONS_UART_Write, NewBaudRate);
         Format_String(CONS_UART_Write, "bps\n");
         xSemaphoreGive(CONS_Mutex);
         GPS_UART_SetBaudrate(NewBaudRate);
-        Parameters.GPSbaud=NewBaudRate;
         NoValidData=0; }
-#endif
+
     }
   }
 }
