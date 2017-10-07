@@ -8,7 +8,7 @@ class Atmosphere
    // int32_t Temperature; // [0.1 degC]
 
    // altitude vs. pressure              //       20000, 30000, 40000, 50000, 60000, 70000, 80000, 90000, 100000, 110000     // [   Pa]
-   static const int32_t StdAltTable[10]; //  = { 117764, 91652, 71864, 57752, 42070, 30126, 19493,  9886,   1109,  -6984 } ; // [0.1 m]
+   static const int32_t StdAltTable[10]; //  = { 117764, 91652, 71864, 55752, 42070, 30126, 19493,  9886,   1109,  -6984 } ; // [0.1 m]
 
   public:
    // dH/dP = -R/g*T => R = 287.04m^2/K/sec^2, g = 9.80655m/s^2
