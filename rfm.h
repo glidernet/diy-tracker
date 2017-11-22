@@ -44,13 +44,8 @@
 #endif // of WITH_RFM95
 
 #if defined(WITH_SX1272)
-
 #include "sx1272.h"	// Registers are almost the same for the sx1272 and the sx1276
-
-#define RF_IRQ_PreambleDetect 0x0200
-
 #endif
-
                                      // bits in IrqFlags1 and IrfFlags2
 #define RF_IRQ_ModeReady      0x8000 // mode change done (between some modes)
 #define RF_IRQ_RxReady        0x4000

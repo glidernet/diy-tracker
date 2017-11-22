@@ -23,7 +23,7 @@ TCHAIN = arm-none-eabi
 # rfm69
 # rfm69w        ... for the lower tx power RF chip
 # rfm95
-# sx1272		... for sx1272 (sets rfm95 as it is mostly identical except reset level)
+# sx1272		... for sx1272
 
 # relay         ... packet-relay code (conditional code not implemented yet)
 # pps_irq       ... PPS signal makes an IRQ and the RTOS clock is adjusted in frequency to mathc the GPS (but not very precise)
