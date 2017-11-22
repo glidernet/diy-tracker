@@ -23,6 +23,7 @@ TCHAIN = arm-none-eabi
 # rfm69
 # rfm69w        ... for the lower tx power RF chip
 # rfm95
+# sx1272		... for sx1272 (sets rfm95 as it is mostly identical except reset level)
 
 # relay         ... packet-relay code (conditional code not implemented yet)
 # pps_irq       ... PPS signal makes an IRQ and the RTOS clock is adjusted in frequency to mathc the GPS (but not very precise)
@@ -42,10 +43,11 @@ TCHAIN = arm-none-eabi
 # WITH_OPTS = blue_pill rfm69 beeper vario i2c1 bmp180 sdlog relay config # for the test system (no knob but the SD card)
 # WITH_OPTS = blue_pill rfm69 beeper vario i2c1 bmp180 lookout relay config gps_pps gps_enable gps_ubx_pass gps_nmea_pass pps_irq
 # WITH_OPTS = maple_mini rfm69 i2c1 bmp180 relay config gps_pps pps_irq gps_enable
-WITH_OPTS = blue_pill rfm69 beeper i2c1 bmp180 relay lookout config gps_pps pps_irq gps_enable gps_ubx_pass gps_nmea_pass
+# WITH_OPTS = blue_pill rfm69 beeper i2c1 bmp180 relay lookout config gps_pps pps_irq gps_enable gps_ubx_pass gps_nmea_pass
 # WITH_OPTS = blue_pill rfm69 beeper vario i2c1 bmp180 relay config gps_pps pps_irq gps_enable
 # WITH_OPTS = blue_pill rfm69 beeper relay config
-# WITH_OPTS = blue_pill rfm95 beeper vario i2c1 bmp180 relay config
+# WITH_OPTS = blue_pill rfm95 beeper vario i2c1 bmp280 relay config
+WITH_OPTS = blue_pill beeper vario i2c1 bmp280 config gps_pps pps_irq batt_sense rf_irq sx1272 relay
 
 # WITH_OPTS = rfm69 relay config swap_uarts i2c2 bmp280 ogn_cube_1 # for OGN-CUBE-1
 
@@ -165,6 +167,10 @@ endif
 
 ifneq ($(findstring rfm95,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_RFM95
+endif
+
+ifneq ($(findstring sx1272,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_SX1272
 endif
 
 ifneq ($(findstring rf_irq,$(WITH_OPTS)),)
@@ -287,6 +293,10 @@ ifneq (,$(wildcard $(OUTDIR)/main.elf))
 	@echo "-$@:"
 	@$(SIZE) --format=berkeley $(OUTDIR)/main.elf
 endif
+
+# Flash using an st-link adapter
+flash-stlink: $(OUTDIR)/main.hex
+	st-flash --format ihex write $(OUTDIR)/main.hex
 
 #-------------------------------------------------------------------------------
 

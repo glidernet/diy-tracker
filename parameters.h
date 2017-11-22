@@ -105,6 +105,9 @@ class FlashParameters
 #ifdef WITH_RFM95
     Len+=Format_String(Line+Len, " RFM95");
 #endif
+#ifdef WITH_SX1272
+    Len+=Format_String(Line+Len, " SX1272");
+#endif
     Line[Len++]='/';
     Len+=Format_SignDec(Line+Len, (int16_t)getTxPower());
     Len+=Format_String(Line+Len, "dBm");
