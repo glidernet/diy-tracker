@@ -414,7 +414,7 @@ void vTaskGPS(void* pvParameters)
         Burst=0;
       }
 
-      if(NoValidData>=1000)                                                  // if no valid data from GPS for 1sec, then decide to switch the baudrate
+      if(NoValidData>=2000)                                                  // if no valid data from GPS for 2sec, then decide to switch the baudrate
       { GPS_Status.Flags=0;
         uint32_t NewBaudRate = GPS_nextBaudRate();
         xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
