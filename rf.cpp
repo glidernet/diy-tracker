@@ -74,7 +74,7 @@ static void SetTxChannel(uint8_t TxChan=RX_Channel)         // default channel t
 #ifdef WITH_RFM69
   TRX.WriteTxPower(Parameters.getTxPower(), Parameters.isTxTypeHW()); // set TX for transmission
 #endif
-#ifdef WITH_RFM95
+#if defined(WITH_RFM95) || defined(WITH_SX1272)
   TRX.WriteTxPower(Parameters.getTxPower());                          // set TX for transmission
 #endif
   TRX.setChannel(TxChan&0x7F);
