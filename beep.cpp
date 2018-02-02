@@ -27,7 +27,6 @@ void Beep_Configuration(void)
   TIM_OC3Init(TIM4, &TIM_OCStruct);                            // TIM4.CH3
   TIM_OC3PreloadConfig(TIM4, TIM_OCPreload_Enable);
 
-  TIM_OCStruct.TIM_OCPolarity  = TIM_OCPolarity_High;          // in anti-phase
   TIM_OC4Init(TIM4, &TIM_OCStruct);                            // TIM4.CH4
   TIM_OC4PreloadConfig(TIM4, TIM_OCPreload_Enable);
 
