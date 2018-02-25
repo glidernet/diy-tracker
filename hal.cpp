@@ -316,7 +316,7 @@ void RFM_RESET(uint8_t On)
     else RFM_RESET_High(); }
 #endif
 
-#ifdef WITH_RFM69                     // RESET is active HIGH
+#if defined(WITH_RFM69) || defined(WITH_SX1272) // RESET is active HIGH
 void RFM_RESET(uint8_t On)
 { if(On) RFM_RESET_High();
     else RFM_RESET_Low(); }
