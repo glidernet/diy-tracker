@@ -2,16 +2,10 @@
 #include <string.h>
 #include <math.h>
 
-#include "nmea.h"
-#include "format.h"
-
-#ifndef NO_RTOS
-#include "i2c.h"
-#endif
+#include "hal.h"
 
 class BMP280
 { private:
-#ifndef NO_RTOS
    static const uint8_t ADDR0        = 0x76; // possible I2C addresses
    static const uint8_t ADDR1        = 0x77;
 
@@ -31,20 +25,20 @@ class BMP280
    static const uint8_t REG_TEMP_MSB  = 0xFA; // Temperature result: MSB
    static const uint8_t REG_TEMP_LSB  = 0xFB; // Temperature result: LSB
    static const uint8_t REG_TEMP_XLSB = 0xFC; // Temperature result: more LSB
-#endif
-   // static const uint8_t MEAS_OSS     = 0x03; // oversampling factor: 0=single, 1=two, 2=four, 3=eight samples
   public:
-#ifndef NO_RTOS
-   I2C_TypeDef* Bus;                         // which I2C bus
+   uint8_t Bus;                              // which I2C bus
    uint8_t ADDR;                             // detected I2C address
-#endif
   private:
-  uint16_t T1;                // 13 calibration values from EEPROM
-   int16_t T2, T3;
-  uint16_t P1;
-   int16_t P2, P3, P4, P5, P6, P7, P8, P9;
-   int16_t D;
-
+   union
+   { int16_t Calib[13];
+     struct
+     { uint16_t T1;                // 13 calibration values from EEPROM
+        int16_t T2, T3;
+       uint16_t P1;
+        int16_t P2, P3, P4, P5, P6, P7, P8, P9;
+        int16_t D;
+     } ;
+   } ;
   public:
      uint8_t Error;          //      error on the I2C bus (0=no error)
      int32_t RawTemp;        //      raw temperature - to be processed
@@ -55,7 +49,6 @@ class BMP280
 
   public:
 
-#ifdef NO_RTOS
   void DefaultCalib(void)    // set default calibration constants
   { T1 =   27504;
     T2 =   26435;
@@ -70,20 +63,18 @@ class BMP280
     P8  = -14600;
     P9  =   6000;
     D   =      0; }
-#endif
 
-#ifndef NO_RTOS
-  uint8_t CheckID(void) // check ID, to make sure the BMP180 is connected and works correctly
+  uint8_t CheckID(void) // check ID, to make sure the BMP280 is connected and works correctly
    { uint8_t ID;
      ADDR=0;
      Error=I2C_Read(Bus, ADDR0, REG_ID, ID);
-     if( (!Error) && (ID==0x58) ) { ADDR=ADDR0; return 0; }
+     if( (!Error) && ( (ID==0x58) || (ID==0x60) ) ) { ADDR=ADDR0; return 0; }
      Error=I2C_Read(Bus, ADDR1, REG_ID, ID);
-     if( (!Error) && (ID==0x58) ) { ADDR=ADDR1; return 0; }
+     if( (!Error) && ( (ID==0x58) || (ID==0x60) ) ) { ADDR=ADDR1; return 0; }
      return 1; } // 0 => no error and correct ID
 
   uint8_t ReadCalib(void) // read the calibration constants from the EEPROM
-  { Error=I2C_Read(Bus, ADDR, REG_CALIB, (uint8_t *)(&T1), 26);
+  { Error=I2C_Read(Bus, ADDR, REG_CALIB, (uint8_t *)Calib, 2*13);
     return Error; }
 
   uint8_t ReadReady(void) // check if temperature and pressure conversion is done
@@ -126,8 +117,6 @@ class BMP280
   { CalcTemperature();
     CalcPressure(); }
 
-#endif
-
   void CalcTemperature(void)   // calculate the temperature from raw readout and calibration values
   { int32_t var1 = ((((RawTemp>>3) - ((int32_t)T1<<1))) * ((int32_t)T2)) >> 11;
     int32_t var2 = ( ( (((RawTemp>>4) - (int32_t)T1) * ((RawTemp>>4) - (int32_t)T1) ) >> 12) * ((int32_t)T3) ) >> 14;
@@ -154,4 +143,3 @@ class BMP280
   }
 
 } ;
-

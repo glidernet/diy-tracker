@@ -1,7 +1,9 @@
-#include <FreeRTOS.h>
-#include <task.h>
-#include <semphr.h>
-#include <queue.h>
+// #include <FreeRTOS.h>
+// #include <task.h>
+// #include <semphr.h>
+// #include <queue.h>
+
+#include "hal.h"
 
 #include "stm32f10x.h"
 #include "stm32f10x_flash.h"
@@ -14,20 +16,25 @@
 #include "stm32f10x_iwdg.h"
 #include "misc.h"
 
-#include "hal.h"
-
 #include "uart.h"
 #include "uart1.h"
 #include "uart2.h"
 
 #include "spi1.h"
+
 #include "adc.h"
 
 #include "systick.h"
 
 #ifdef WITH_BEEPER
-  #include "beep.h"
+#include "beep.h"
+#include "fifo.h"
 #endif
+
+#if defined(WITH_I2C1) || defined(WITH_I2C2)
+  #include "i2c.h"
+#endif
+
 
 // ======================================================================================
 // to deal with the HC-06 Bluetooth module:
@@ -65,7 +72,7 @@
 
 // ======================================================================================
 
-// Blue Pill pin-out: "no name" STM32F103C8T6, CPU chip facing up
+// Blue Pill pin-out: STM32F103C8T6, 64kB of Flash, CPU chip facing up
 
 //                  Vbat     3.3V           -> LED, I2C pull-up
 // LED <-           PC13     GND            <- Li-Ion battery
@@ -90,7 +97,7 @@
 
 // ---------------------------------------------------------------------------------------
 
-// Maple Mini pin-out: CPU chip facing up
+// Maple Mini pin-out: STM32F103..., 128kB of Flash, CPU chip facing up
 
 //                     VCC            VCC
 //                     GND            GND
@@ -145,6 +152,19 @@
 
 // ======================================================================================
 
+uint32_t getUniqueAddress(void)
+{ uint32_t ID = UniqueID[0] ^ UniqueID[1] ^ UniqueID[2]; return ID&0x00FFFFFF; }
+
+FlashParameters Parameters; // parameters to be stored in Flash, on the last page
+
+// ======================================================================================
+
+#ifdef WITH_MAVLINK
+uint8_t  MAV_Seq = 0;       // sequence number for MAVlink message sent out
+#endif
+
+// ======================================================================================
+
 void RCC_Configuration(void)
 {
   RCC_DeInit ();                                         // RCC system reset(for debug purpose)
@@ -196,6 +216,16 @@ void LED_PCB_On   (void) { GPIO_ResetBits(GPIOA, GPIO_Pin_1); }   // LED is on P
 void LED_PCB_Off  (void) { GPIO_SetBits  (GPIOA, GPIO_Pin_1); }
 #endif
 
+#ifdef WITH_LED_RX
+void LED_RX_On    (void) { GPIO_ResetBits(GPIOD, GPIO_Pin_3); }
+void LED_RX_Off   (void) { GPIO_SetBits  (GPIOD, GPIO_Pin_3); }
+#endif
+
+#ifdef WITH_LED_TX
+void LED_TX_On    (void) { GPIO_ResetBits(GPIOD, GPIO_Pin_4); }
+void LED_TX_Off   (void) { GPIO_SetBits  (GPIOD, GPIO_Pin_4); }
+#endif
+
 static void LED_GPIO_Configuration (void)             // LED on the PCB
 { GPIO_InitTypeDef  GPIO_InitStructure;
 
@@ -242,10 +272,10 @@ void RFM_Deselect(void) { SPI1_Deselect(); }
 
 // PB4: RF chip IRQ: active HIGH
 #ifdef SPEEDUP_STM_LIB
-bool RFM_DIO0_isOn(void)   { return (GPIOB->IDR & GPIO_Pin_4) != 0; }
+bool RFM_IRQ_isOn(void)   { return (GPIOB->IDR & GPIO_Pin_4) != 0; }
 // bool RFM_DIO4_isOn(void)   { return (GPIOB->IDR & GPIO_Pin_3) != 0; }
 #else
-bool RFM_DIO0_isOn(void)   { return GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_4) != Bit_RESET; }
+bool RFM_IRQ_isOn(void)   { return GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_4) != Bit_RESET; }
 // bool RFM_DIO4_isOn(void)   { return GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_3) != Bit_RESET; }
 #endif
 
@@ -273,9 +303,9 @@ void RFM_Deselect(void) { GPIO_WriteBit(GPIOB, GPIO_Pin_0, Bit_SET  ); }
 
 // PB2: RF chip IRQ: active HIGH
 #ifdef SPEEDUP_STM_LIB
-bool RFM_DIO0_isOn(void)   { return (GPIOB->IDR & GPIO_Pin_2) != 0; }
+bool RFM_IRQ_isOn(void)   { return (GPIOB->IDR & GPIO_Pin_2) != 0; }
 #else
-bool RFM_DIO0_isOn(void)   { return GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_2) != Bit_RESET; }
+bool RFM_IRQ_isOn(void)   { return GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_2) != Bit_RESET; }
 #endif
 
 #endif // OGN_CUBE
@@ -331,9 +361,9 @@ static void RFM_GPIO_Configuration(void)
   EXTI_Init(&EXTI_InitStructure);
 
   NVIC_EnableIRQ(EXTI4_IRQn);
-#endif
+#endif // WITH_RF_IRQ
 
-#endif
+#endif // WITH_BLUE_PILL || WITH_MAPLE_MINI
 
 #ifdef WITH_OGN_CUBE_1
   GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_2;                        // PB2 = DIO0 RFM69/95
@@ -363,9 +393,9 @@ static void RFM_GPIO_Configuration(void)
   EXTI_Init(&EXTI_InitStructure);
 
   NVIC_EnableIRQ(EXTI2_IRQn);
-#endif
+#endif // WITH_RF_IRQ
 
-#endif
+#endif // WITH_OGN_CUBE_1
 
 RFM_RESET(0);
 RFM_Deselect();
@@ -398,26 +428,70 @@ void EXTI2_IRQHandler(void)                                        // RF chip DI
 #endif
 #endif
 
-uint8_t RFM_TransferByte(uint8_t Byte)
-{ return SPI1_TransferByte(Byte); }
+uint8_t RFM_TransferByte(uint8_t Byte) { return SPI1_TransferByte(Byte); }
 
 // -------------------------------------------------------------------------------------------------------
 
+SemaphoreHandle_t ADC1_Mutex; // ADC1 Mutex for Knob, temperature/voltage readout, etc.
+
 uint16_t ADC_Read_MCU_Vtemp(void) { return ADC1_Read(ADC_Channel_TempSensor); }
 uint16_t ADC_Read_MCU_Vref (void) { return ADC1_Read(ADC_Channel_Vrefint); }
+uint16_t ADC_Read_Knob     (void) { return ADC1_Read(ADC_Channel_8); }
 uint16_t ADC_Read_Vbatt    (void) { return ADC1_Read(ADC_Channel_9); }
-uint16_t ADC_ReadKnob      (void) { return ADC1_Read(ADC_Channel_8); }
+
+uint16_t MCU_Vref=0;                // [0.25ADC] measured internal voltage reference = 1.25V
+uint16_t MCU_Vtemp=0;               // [0.25ADC]
+ int16_t MCU_Temp=0;                // [0.1degC] measured internal temperature sensor
+uint16_t MCU_Vbatt=0;               // [0.001V] measured battery voltage
+
+uint16_t Measure_MCU_Vref(void)
+{ xSemaphoreTake(ADC1_Mutex, portMAX_DELAY);
+  ADC_Read_MCU_Vref();
+  if(MCU_Vref==0) MCU_Vref = ADC_Read_MCU_Vref()*4;
+  uint16_t Vref=ADC_Read_MCU_Vref();
+  xSemaphoreGive(ADC1_Mutex);
+  MCU_Vref = (3*MCU_Vref+2)/4 + Vref;
+  return MCU_Vref; }               // [0.25ADC]
+
+ int16_t Measure_MCU_Temp(void)
+{ Measure_MCU_Vref();
+  xSemaphoreTake(ADC1_Mutex, portMAX_DELAY);
+  ADC_Read_MCU_Vtemp();
+  if(MCU_Vtemp==0) MCU_Vtemp = ADC_Read_MCU_Vtemp()*4;
+  uint16_t Vtemp = ADC_Read_MCU_Vtemp();
+  xSemaphoreGive(ADC1_Mutex);
+  MCU_Vtemp = (3*MCU_Vtemp+2)/4 + Vtemp;
+  // MCU_Vtemp = ((int32_t)1250*MCU_Vtemp+(MCU_Vref>>1))/MCU_Vref;          // [mV]
+  // MCU_Temp  = 250 + ((((int32_t)1430-MCU_Vtemp)*37+8)>>4);               // [0.1degC]
+  // MCU_Temp = 250 + ( ( ( (int32_t)1430 - ((int32_t)1250*(int32_t)MCU_Vtemp+(MCU_Vref>>1))/MCU_Vref )*(int32_t)37 +8 )>>4); // [0.1degC]
+  MCU_Temp = 250 + ( ( ( (int32_t)14300 - ((int32_t)12500*(int32_t)MCU_Vtemp+(MCU_Vref>>1))/MCU_Vref )*(int32_t)119 + 256 )>>9); // [0.1degC]
+  return MCU_Temp; }             // [0.1degC]
+                                 // Datasheet, page 80, 1.43V at 25degC, 4.3mV/degC, 17us sampling time
+
+uint16_t Measure_MCU_VCC(void)
+{ Measure_MCU_Vref();                                                 // this assumes Vref of the MCU = VCC and internal reference is 2.5V
+  return ( ((uint32_t)5000<<12)+(MCU_Vref>>1))/MCU_Vref; }            // [1mV]}
+
+#ifdef WITH_VBATT_SENSE
+uint16_t Measure_Vbatt(void)
+{ Measure_MCU_Vref();
+  xSemaphoreTake(ADC1_Mutex, portMAX_DELAY);
+  ADC_Read_Vbatt();
+  uint16_t Vtemp = ADC_Read_Vbatt() + ADC_Read_Vbatt();                // [0.5ADC]
+  xSemaphoreGive(ADC1_Mutex);
+  // MCU_Vbatt = ((int32_t)154*(int32_t)Vbatt+(MCU_Vref>>1))/MCU_Vref; } // [1/64V] battery voltage assuming 1:1 divider from battery to PB1
+  MCU_Vbatt = ((int32_t)1250*(int32_t)Vbatt+(MCU_Vref>>1))/MCU_Vref;   // [1mV] battery voltage assuming 1:1 divider from battery to PB1
+  return MCU_Vbatt; }
+#endif
 
 // -------------------------------------------------------------------------------------------------------
 
 #ifdef WITH_GPS_ENABLE
-// PA0 is GPS enable
 void GPS_DISABLE(void) { GPIO_ResetBits(GPIOA, GPIO_Pin_0); }
 void GPS_ENABLE (void) { GPIO_SetBits  (GPIOA, GPIO_Pin_0); }
 #endif
 
 #ifdef WITH_GPS_PPS
-// PA1 is GPS PPS
 bool GPS_PPS_isOn(void) { return GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_1) != Bit_RESET; }
 #endif
 
@@ -482,8 +556,11 @@ void EXTI1_IRQHandler(void)                                        // PPS interr
 
 // -------------------------------------------------------------------------------------------------------
 
+SemaphoreHandle_t CONS_Mutex; // console port Mutex
+
 void UART_Configuration(int CONS_BaudRate, int GPS_BaudRate)
 {
+  CONS_Mutex = xSemaphoreCreateMutex();
 #ifdef WITH_SWAP_UARTS
   UART2_Configuration(CONS_BaudRate);
   UART1_Configuration(GPS_BaudRate);
@@ -496,6 +573,8 @@ void UART_Configuration(int CONS_BaudRate, int GPS_BaudRate)
 #ifdef WITH_SWAP_UARTS
 int  CONS_UART_Read  (uint8_t &Byte)  { return UART2_Read (Byte); }
 void CONS_UART_Write (char     Byte)  {        UART2_Write(Byte); }
+int  CONS_UART_Free  (void)           { return UART2_Free(); }
+int  CONS_UART_Full  (void)           { return UART2_Full(); }
 void CONS_UART_SetBaudrate(int BaudRate) { UART2_SetBaudrate(BaudRate); }
 int   GPS_UART_Read  (uint8_t &Byte)  { return UART1_Read (Byte); }
 void  GPS_UART_Write (char     Byte)  {        UART1_Write(Byte); }
@@ -503,6 +582,8 @@ void  GPS_UART_SetBaudrate(int BaudRate) { UART1_SetBaudrate(BaudRate); }
 #else
 int  CONS_UART_Read  (uint8_t &Byte)  { return UART1_Read (Byte); }
 void CONS_UART_Write (char     Byte)  {        UART1_Write(Byte); }
+int  CONS_UART_Free  (void)           { return UART1_Free(); }
+int  CONS_UART_Full  (void)           { return UART1_Full(); }
 void CONS_UART_SetBaudrate(int BaudRate) { UART1_SetBaudrate(BaudRate); }
 int   GPS_UART_Read  (uint8_t &Byte)  { return UART2_Read (Byte); }
 void  GPS_UART_Write (char     Byte)  {        UART2_Write(Byte); }
@@ -511,24 +592,44 @@ void  GPS_UART_SetBaudrate(int BaudRate) { UART2_SetBaudrate(BaudRate); }
 
 // -------------------------------------------------------------------------------------------------------
 
+
+// -------------------------------------------------------------------------------------------------------
+
 void IO_Configuration(void)
 {
+  RCC_Configuration();
+
   RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
   RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
   RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOC, ENABLE);
-
   LED_GPIO_Configuration();                              // LED
   GPS_GPIO_Configuration();                              // GPS PPS, Enable, PPS IRQ
 
   RFM_GPIO_Configuration();                              // RF Reset, IRQ
   SPI1_Configuration();                                  // RF SPI
 
-  ADC_Configuration();                                   // ADC
+  ADC1_Mutex = xSemaphoreCreateMutex();
+  ADC_Configuration();                                   // ADC to measure MCU temperature and supply voltage
 
 #ifdef WITH_BEEPER
   Beep_Configuration();
 #endif
 
+#ifdef WITH_I2C1
+  I2C_Configuration(I2C1, I2C_SPEED);      // 400kHz I2C bus speed
+#endif
+
+#ifdef WITH_I2C2
+  I2C_Configuration(I2C2, I2C_SPEED);      // 400kHz I2C bus speed
+#endif
+
+#if defined(WITH_I2C1) || defined(WITH_I2C2)
+  I2C_Mutex = xSemaphoreCreateMutex();
+#endif
+
+  IWDG_Configuration();                    // setup watch-dog
+  IWDG_ReloadCounter();
+  IWDG_Enable();
 }
 
 // -------------------------------------------------------------------------------------------------------
@@ -537,5 +638,142 @@ void IWDG_Configuration(void)                       // setup watch-dog
 { IWDG_WriteAccessCmd(IWDG_WriteAccess_Enable);
   IWDG_SetPrescaler(IWDG_Prescaler_8);              // about 40kHz/8 = 5kHz counter
   IWDG_SetReload(250); }                            // reload with 250 thus 50ms timeout ?
+
+// -------------------------------------------------------------------------------------------------------
+
+#ifdef WITH_BEEPER
+
+uint8_t  Vario_Note=0x00; // 0x40;
+uint16_t Vario_Period=800;
+uint16_t Vario_Fill=50;
+
+static volatile uint16_t Vario_Time=0;
+
+static volatile uint8_t Play_Note=0;             // Note being played
+static volatile uint8_t Play_Counter=0;          // [ms] time counter
+
+static FIFO<uint16_t, 8> Play_FIFO;              // queue of notes to play
+
+void Play(uint8_t Note, uint8_t Len)             // [Note] [ms] put a new not to play in the queue
+{ uint16_t Word = Note; Word<<=8; Word|=Len; Play_FIFO.Write(Word); }
+
+uint8_t Play_Busy(void) { return Play_Counter; } // is a note being played right now ?
+
+static void Play_TimerCheck(void)                // every ms serve the note playing
+{ uint8_t Counter=Play_Counter;
+  if(Counter)                                    // if counter non-zero
+  { Counter--;                                   // decrement it
+    if(!Counter) Beep_Note(Play_Note=0x00);      // if reached zero, stop playing the note
+  }
+  if(!Counter)                                   // if counter reached zero
+  { if(!Play_FIFO.isEmpty())                     // check for notes in the queue
+    { uint16_t Word=0; Play_FIFO.Read(Word);     // get the next note
+      Beep_Note(Play_Note=Word>>8); Counter=Word&0xFF; }   // start playing it, load counter with the note duration
+  }
+  Play_Counter=Counter;
+
+  uint16_t Time=Vario_Time;
+  Time++; if(Time>=Vario_Period) Time=0;
+  Vario_Time = Time;
+
+  if(Counter==0)                            // when no notes are being played, make the vario sound
+  { if(Time<=Vario_Fill)
+    { if(Play_Note!=Vario_Note) Beep_Note(Play_Note=Vario_Note); }
+    else
+    { if(Play_Note!=0) Beep_Note(Play_Note=0x00); }
+  }
+}
+
+#endif // WITH_BEEPER
+
+// -------------------------------------------------------------------------------------------------------
+
+volatile uint8_t LED_PCB_Counter = 0;
+void LED_PCB_Flash(uint8_t Time) { if(Time>LED_PCB_Counter) LED_PCB_Counter=Time; } // [ms]
+
+#ifdef WITH_LED_TX
+volatile uint8_t LED_TX_Counter = 0;
+void LED_TX_Flash(uint8_t Time) { if(Time>LED_TX_Counter) LED_TX_Counter=Time; } // [ms]
+#endif
+
+#ifdef WITH_LED_RX
+volatile uint8_t LED_RX_Counter = 0;
+void LED_RX_Flash(uint8_t Time) { if(Time>LED_RX_Counter) LED_RX_Counter=Time; } // [ms]
+#endif
+
+#ifdef WITH_LED_BAT
+volatile uint8_t LED_BAT_Counter = 0;
+void LED_BAT_Flash(uint8_t Time) { if(Time>LED_BAT_Counter) LED_BAT_Counter=Time; } // [ms]
+#endif
+
+void LED_TimerCheck(uint8_t Ticks)
+{ uint8_t Counter=LED_PCB_Counter;
+  if(Counter)
+  { if(Ticks<Counter) Counter-=Ticks;
+                 else Counter =0;
+    if(Counter) LED_PCB_On();
+           else LED_PCB_Off();
+    LED_PCB_Counter=Counter; }
+#ifdef WITH_LED_TX
+  Counter=LED_TX_Counter;
+  if(Counter)
+  { if(Ticks<Counter) Counter-=Ticks;
+                 else Counter =0;
+    if(Counter) LED_TX_On();
+           else LED_TX_Off();
+    LED_TX_Counter=Counter; }
+#endif
+#ifdef WITH_LED_RX
+  Counter=LED_RX_Counter;
+  if(Counter)
+  { if(Ticks<Counter) Counter-=Ticks;
+                 else Counter =0;
+    if(Counter) LED_RX_On();
+           else LED_RX_Off();
+    LED_RX_Counter=Counter; }
+#endif
+#ifdef WITH_LED_BAT
+  Counter=LED_BAT_Counter;
+  if(Counter)
+  { if(Ticks<Counter) Counter-=Ticks;
+                 else Counter =0;
+    if(Counter) LED_BAT_On();
+           else LED_BAT_Off();
+    LED_BAT_Counter=Counter; }
+#endif
+}
+
+// -------------------------------------------------------------------------------------------------------
+
+extern "C"
+void vApplicationIdleHook(void) // when RTOS is idle: should call "sleep until an interrupt"
+{ __WFI();                      // wait-for-interrupt
+}
+
+extern "C"
+void vApplicationTickHook(void) // RTOS timer tick hook
+{ IWDG_ReloadCounter();         // reset watch-dog at every tick (primitive, but enough to start)
+
+  LED_TimerCheck(1);
+
+#ifdef WITH_BEEPER
+  Play_TimerCheck();            // Play note periodic check
+#endif
+}
+
+// -------------------------------------------------------------------------------------------------------
+
+SemaphoreHandle_t I2C_Mutex;
+
+static I2C_TypeDef *I2C_Bus[2] = { I2C1, I2C2 } ;
+
+uint8_t I2C_Read(uint8_t Bus, uint8_t Addr, uint8_t Reg, uint8_t *Data, uint8_t Len, uint8_t Wait)
+{ return I2C_Read(I2C_Bus[Bus], Addr, Reg, Data, Len); }
+
+uint8_t I2C_Write(uint8_t Bus, uint8_t Addr, uint8_t Reg, uint8_t *Data, uint8_t Len, uint8_t Wait)
+{ return I2C_Write(I2C_Bus[Bus], Addr, Reg, Data, Len); }
+
+uint8_t I2C_Restart(uint8_t Bus)
+{ I2C_Restart(I2C_Bus[Bus], I2C_SPEED); return 0; }
 
 // -------------------------------------------------------------------------------------------------------

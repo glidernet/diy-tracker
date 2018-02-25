@@ -21,5 +21,7 @@ char inline UART1_RxChar(void)    { return (uint8_t)USART_ReceiveData(USART1); }
 int  UART1_Read(uint8_t &Byte);
 void UART1_Write(char Byte);
 void inline UART1_TxKick(void) { USART_ITConfig(USART1, USART_IT_TXE, ENABLE); }
+int  UART1_Free(void);
+int  UART1_Full(void);
 
 #endif // __UART1_H__

@@ -93,7 +93,7 @@ class LDPC_Decoder
    int16_t  ExtBit[CodeBits]; // extrinsic inf.
    int16_t  OutBit[CodeBits]; // a-posteriori bits
 
-   void Input(const uint8_t *Data, uint8_t *Err)
+   void Input(const uint8_t *Data, const uint8_t *Err)
    { uint8_t Mask=1; uint8_t Idx=0; uint8_t DataByte=0; uint8_t ErrByte=0;
      for(uint8_t Bit=0; Bit<CodeBits; Bit++)
      { if(Mask==1) { DataByte=Data[Idx];  ErrByte=Err[Idx]; }

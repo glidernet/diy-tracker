@@ -5,72 +5,17 @@
 
 #include "hal.h"
 
-#include <FreeRTOS.h>
-#include <task.h>
-#include <semphr.h>
-#include <queue.h>
-
 #include "main.h"
-
-#include "fifo.h"
-
-#include "format.h"
-
-#ifdef WITH_I2C1
-  #include "i2c.h"
-#endif
-
-#include "flashsize.h"
-#include "uniqueid.h"
-
-#include "parameters.h"              // Parameters in Flash
 
 #include "gps.h"                     // GPS task:  read the GPS receiver
 #include "rf.h"                      // RF task:   transmit/received packets on radio
+#include "proc.h"
 #include "ctrl.h"                    // CTRL task: write log file to SD card
 #include "sens.h"                    // SENS task: read I2C sensors (baro for now)
 #include "knob.h"                    // KNOB task: read user knob
 
-SemaphoreHandle_t CONS_Mutex; // console port Mutex
-SemaphoreHandle_t ADC1_Mutex; // ADC1 Mutex for Knob, temperature/voltage readout, etc.
-
-FlashParameters Parameters; // parameters to be stored in Flash, on the last page
-
-// extern "C" void __cxa_pure_virtual (void) {} // to reduce the code size ?
-
-// ======================================================================================
-
-volatile uint8_t LED_PCB_Counter = 0;
-
-void LED_PCB_Flash(uint8_t Time=100) { LED_PCB_Counter=Time; } // [ms]
-
-static void LED_PCB_TimerCheck(void)
-{ uint8_t Counter=LED_PCB_Counter;
-  if(Counter)
-  { Counter--;
-    if(Counter) LED_PCB_On();
-           else LED_PCB_Off();
-    LED_PCB_Counter=Counter; }
-}
-
-// ======================================================================================
-
-// #include "rtc.h"
 
 /*
-void NVIC_Configuration (void)
-{
-  NVIC_InitTypeDef NVIC_InitStructure;
-
-  NVIC_InitStructure.NVIC_IRQChannel = RTC_IRQn;                     // Enable the RTC Interrupt
-  NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
-  NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
-  NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-  NVIC_Init(&NVIC_InitStructure);
-}
-*/
-// ======================================================================================
-
 #ifdef WITH_BEEPER
 
 uint8_t  Vario_Note=0x00; // 0x40;
@@ -82,7 +27,7 @@ static volatile uint16_t Vario_Time=0;
 static volatile uint8_t Play_Note=0;             // Note being played
 static volatile uint8_t Play_Counter=0;          // [ms] time counter
 
-static VolatileFIFO<uint16_t, 8> Play_FIFO;      // queue of notes to play
+static FIFO<uint16_t, 8> Play_FIFO;              // queue of notes to play
 
 void Play(uint8_t Note, uint8_t Len)             // [Note] [ms] put a new not to play in the queue
 { uint16_t Word = Note; Word<<=8; Word|=Len; Play_FIFO.Write(Word); }
@@ -115,77 +60,30 @@ static void Play_TimerCheck(void)                // every ms serve the note play
 }
 
 #endif // WITH_BEEPER
+*/
 
-// ======================================================================================
+int main(void)
+{
+  IO_Configuration();                          // GPIO for LED and RF chip, SPI for RF, ADC, GPS GPIO and IRQ
 
-void prvSetupHardware(void)
-{ RCC_Configuration();
-
-  IO_Configuration();                      // GPIO for LED and RF chip, SPI for RF, ADC, GPS GPIO and IRQ
-
-  if(Parameters.ReadFromFlash()<0) // read parameters from Flash
-  { Parameters.setDefault();       // if nov valid: set defaults
-    Parameters.WriteToFlash(); }   // and write the defaults back to Flash
-
+  if(Parameters.ReadFromFlash()<0)             // read parameters from Flash
+  { Parameters.setDefault();                   // if nov valid: set defaults
+    Parameters.WriteToFlash(); }               // and write the defaults back to Flash
   // to overwrite parameters
   // Parameters.setTxTypeHW();
   // Parameters.setTxPower(+14); // for RFM69HW (H = up to +20dBm Tx power)
   // Parameters.WriteToFlash();
 
-  UART_Configuration(Parameters.CONbaud, Parameters.GPSbaud);
-  CONS_Mutex = xSemaphoreCreateMutex();
+  UART_Configuration(Parameters.CONbaud, GPS_getBaudRate());
 
-#ifdef WITH_I2C1
-  I2C_Configuration(I2C1, 400000);         // 400kHz I2C bus speed
-#endif
-
-#ifdef WITH_I2C2
-  I2C_Configuration(I2C2, 400000);         // 400kHz I2C bus speed
-#endif
-
-  ADC1_Mutex = xSemaphoreCreateMutex();
-
-  IWDG_Configuration();                    // setup watch-dog
-  IWDG_ReloadCounter();
-  IWDG_Enable();
-}
-
-extern "C"
-void vApplicationIdleHook(void) // when RTOS is idle: should call "sleep until an interrupt"
-{ __WFI(); }                    // wait-for-interrupt
-
-extern "C"
-void vApplicationTickHook(void) // RTOS timer tick hook
-{
-  IWDG_ReloadCounter();         // reset watch-dog at every tick (primitive, but enough to start)
-
-  LED_PCB_TimerCheck();         // LED flash periodic check
-
-#ifdef WITH_BEEPER
-  Play_TimerCheck();            // Play note periodic check
-#endif
-}
-
-int main(void)
-{
-  prvSetupHardware();
-
-  // CTRL: UART1, Console, SD log
-  xTaskCreate(vTaskCTRL,  "CTRL",   160, 0, tskIDLE_PRIORITY  , 0);
-
+  xTaskCreate(vTaskCTRL,  "CTRL",   160, 0, tskIDLE_PRIORITY  , 0);  // CTRL: UART1, Console, SD log
 #ifdef WITH_KNOB
-  // KNOB: read the knob (potentiometer wired to PB0)
-  xTaskCreate(vTaskKNOB,  "KNOB",   100, 0, tskIDLE_PRIORITY  , 0);
+  xTaskCreate(vTaskKNOB,  "KNOB",   100, 0, tskIDLE_PRIORITY  , 0);  // KNOB: read the knob (potentiometer wired to PB0)
 #endif
-
-  // GPS: GPS NMEA/PPS, packet encoding
-  xTaskCreate(vTaskGPS,   "GPS",    100, 0, tskIDLE_PRIORITY+1, 0);
-
-  // RF: RF chip, time slots, frequency switching, packet reception and error correction
-  xTaskCreate(vTaskRF,    "RF",     160, 0, tskIDLE_PRIORITY+2, 0);
-
-  // SENS: BMP180 pressure, correlate with GPS
-  xTaskCreate(vTaskSENS,  "SENS",   128, 0, tskIDLE_PRIORITY+1, 0);
+  xTaskCreate(vTaskGPS,   "GPS",    100, 0, tskIDLE_PRIORITY+1, 0);  // GPS: GPS NMEA/PPS, packet encoding
+  xTaskCreate(vTaskRF,    "RF",     120, 0, tskIDLE_PRIORITY+1, 0);  // RF: RF chip, time slots, frequency switching, packet reception and error correction
+  xTaskCreate(vTaskPROC,  "PROC",   160, 0, tskIDLE_PRIORITY  , 0);  // processing received packets and prepare packets for transmission
+  xTaskCreate(vTaskSENS,  "SENS",   128, 0, tskIDLE_PRIORITY+1, 0);  // SENS: BMP180 pressure, correlate with GPS
 
   vTaskStartScheduler();
 
@@ -209,9 +107,9 @@ int main(void)
 // . user RF chip continues AGC/RSSI or not ?
 // + periodically refresh the RF chip config (after 60 seconds of Rx inactivity)
 //
-// . packet pools for queing
-// . separate task for FEC correction
-// . separate task for RX processing (retransmission decision)
+// + packet pools for queing
+// + separate task for FEC correction
+// + separate task for RX processing (retransmission decision)
 // . good packets go to RX, bad packets go to FEC first
 // + packet retransmission and strategy
 // . limit or receive range to minimize false FEC decode
@@ -221,7 +119,7 @@ int main(void)
 //
 // + use watchdog to restart in case of a hangup
 // + print heap and task information when Ctlr-C pressed on the console
-// . try to run on Maple Mini (there is more Flash)
+// + try to run on Maple Mini (there is more Flash)
 //
 // + SD card slot and FatFS
 // + simple log system onto SD
@@ -242,7 +140,7 @@ int main(void)
 //
 // . detect when VK16u6 GPS fails below 2.7V supply
 // . audible alert when GPS fails or absent ?
-// . GPS: set higher baud rates
+// + GPS: set higher baud rates
 // + GPS: auto-baud
 // + GPS: keep functioning when GPGSA is not there
 // . check for loss of GPS data and declare fix loss
@@ -251,7 +149,8 @@ int main(void)
 //
 // + connect BMP180 pressure sensor
 // . pressure sensor correction in Flash parameters ?
-// . support MS5611 pressure sensor
+// + support BMP280 pressure sensor
+// + support MS5607 pressure sensor
 // + correlate pressure and GPS altitude
 // . resolve extra dummy byte transfer for I2C_Read()
 // + recover from I2C hang-up
@@ -263,7 +162,7 @@ int main(void)
 // + send standard/pressure altitude in the packet ?
 // . when measuring pressure avoid times when TX or LOG is active to reduce noise ?
 //
-// . stop transmission 60 sec after GPS lock is lost or mark the time as invalid
+// + stop transmission 60 sec after GPS lock is lost or mark the time as invalid
 // . audible alert when RF chip fails ?
 // + all hardware configure to main() before tasks start ?
 //

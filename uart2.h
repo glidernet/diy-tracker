@@ -21,5 +21,7 @@ inline void UART2_TxKick(void) { USART_ITConfig(USART2, USART_IT_TXE, ENABLE); }
 
 int  UART2_Read(uint8_t &Byte);
 void UART2_Write(char Byte);
+int  UART2_Free(void);
+int  UART2_Full(void);
 
 #endif // __UART2_H__

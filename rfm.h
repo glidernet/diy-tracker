@@ -1,3 +1,74 @@
+// -----------------------------------------------------------------------------------------------------------------------
+
+#include "ogn.h"
+
+class RFM_RxPktData                  // packet received by the RF chip
+{ public:
+   static const uint8_t Bytes=26;   // [bytes] number of bytes in the packet
+   uint32_t Time;                   // [sec] Time slot
+   uint16_t msTime;                 // [ms] reception time since the PPS[Time]
+   uint8_t Channel;                 // [] channel where the packet has been recieved
+   uint8_t RSSI;                    // [-0.5dBm]
+   uint8_t Data[Bytes];             // Manchester decoded data bits/bytes
+   uint8_t Err [Bytes];             // Manchester decoding errors
+
+  public:
+
+   void Print(void (*CONS_UART_Write)(char), uint8_t WithData=0) const
+   { // uint8_t ManchErr = Count1s(RxPktErr, 26);
+     Format_String(CONS_UART_Write, "RxPktData: ");
+     Format_UnsDec(CONS_UART_Write, Time);
+     CONS_UART_Write('+');
+     Format_UnsDec(CONS_UART_Write, msTime, 4, 3);
+     CONS_UART_Write(' '); Format_Hex(CONS_UART_Write, Channel);
+     CONS_UART_Write('/');
+     Format_SignDec(CONS_UART_Write, (int32_t)(-5*RSSI), 4, 1);
+     Format_String(CONS_UART_Write, "dBm\n");
+     if(WithData==0) return;
+     for(uint8_t Idx=0; Idx<Bytes; Idx++)
+     { CONS_UART_Write(' '); Format_Hex(CONS_UART_Write, Data[Idx]); }
+     CONS_UART_Write('\r'); CONS_UART_Write('\n');
+     for(uint8_t Idx=0; Idx<Bytes; Idx++)
+     { CONS_UART_Write(' '); Format_Hex(CONS_UART_Write, Err[Idx]); }
+     CONS_UART_Write('\r'); CONS_UART_Write('\n');
+   }
+
+   bool NoErr(void) const
+   { for(uint8_t Idx=0; Idx<Bytes; Idx++)
+       if(Err[Idx]) return 0;
+     return 1; }
+
+   uint8_t ErrCount(void) const                         // count detected manchester errors
+   { uint8_t Count=0;
+     for(uint8_t Idx=0; Idx<Bytes; Idx++)
+       Count+=Count1s(Err[Idx]);
+     return Count; }
+
+   uint8_t ErrCount(const uint8_t *Corr) const          // count errors compared to data corrected by FEC
+   { uint8_t Count=0;
+     for(uint8_t Idx=0; Idx<Bytes; Idx++)
+       Count+=Count1s((uint8_t)((Data[Idx]^Corr[Idx])&(~Err[Idx])));
+     return Count; }
+
+  uint8_t Decode(OGN_RxPacket &Packet, LDPC_Decoder &Decoder, uint8_t Iter=32) const
+  { uint8_t Check=0;
+    uint8_t RxErr = ErrCount();                                // conunt Manchester decoding errors
+    Decoder.Input(Data, Err);                                  // put data into the FEC decoder
+    for( ; Iter; Iter--)                                       // more loops is more chance to recover the packet
+    { Check=Decoder.ProcessChecks();                           // do an iteration
+      if(Check==0) break; }                                    // if FEC all fine: break
+    Decoder.Output(Packet.Packet.Byte());                      // get corrected bytes into the OGN packet
+    RxErr += ErrCount(Packet.Packet.Byte());
+    if(RxErr>15) RxErr=15;
+    Packet.RxErr  = RxErr;
+    Packet.RxChan = Channel;
+    Packet.RxRSSI = RSSI;
+    Packet.Corr   = Check==0;
+    return Check; }
+
+} ;
+
+// -----------------------------------------------------------------------------------------------------------------------
 
 // OGN frequencies for Europe: 868.2 and 868.4 MHz
 // static const uint32_t OGN_BaseFreq  = 868200000; // [Hz] base frequency
@@ -19,7 +90,7 @@
 // 32-bit arythmetic is enough in the above formulas
 
 
-#if WITH_RFM69
+#ifdef WITH_RFM69
 
 #include "sx1231.h"            // register addresses and values for SX1231 = RFM69
 
@@ -156,10 +227,10 @@ class RFM_TRX
      Block_Write(Packet, 2*Len, REG_FIFO);
    }
 
-   void ReadPacket(uint8_t *Data, uint8_t *Err, uint8_t Len=26)     // read packet data from FIFO
-   { uint8_t *Packet = Block_Read(2*Len, REG_FIFO);
+   void ReadPacket(uint8_t *Data, uint8_t *Err, uint8_t Len=26)             // read packet data from FIFO
+   { uint8_t *Packet = Block_Read(2*Len, REG_FIFO);                         // read 2x26 bytes from the RF chip RxFIFO
      uint8_t PktIdx=0;
-     for(uint8_t Idx=0; Idx<Len; Idx++)
+     for(uint8_t Idx=0; Idx<Len; Idx++)                                     // loop over packet bytes
      { uint8_t ByteH = Packet[PktIdx++];
        ByteH = ManchesterDecode[ByteH]; uint8_t ErrH=ByteH>>4; ByteH&=0x0F; // decode manchester, detect (some) errors
        uint8_t ByteL = Packet[PktIdx++];
@@ -232,11 +303,11 @@ class RFM_TRX
      Deselect();
    }
 
-   void ReadPacket(uint8_t *Data, uint8_t *Err, uint8_t Len=26) const // read packet data from FIFO
+   void ReadPacket(uint8_t *Data, uint8_t *Err, uint8_t Len=26) const       // read packet data from FIFO
    { const uint8_t Addr=REG_FIFO;
-     Select();
-     TransferByte(Addr);
-     for(uint8_t Idx=0; Idx<Len; Idx++)
+     Select();                                                              // select the RF chip: start SPI transfer
+     TransferByte(Addr);                                                    // trasnfer the address/read: FIFO
+     for(uint8_t Idx=0; Idx<Len; Idx++)                                     // loop over packet byte
      { uint8_t ByteH = 0;
        ByteH = TransferByte(ByteH);
        ByteH = ManchesterDecode[ByteH]; uint8_t ErrH=ByteH>>4; ByteH&=0x0F; // decode manchester, detect (some) errors
@@ -246,7 +317,7 @@ class RFM_TRX
        Data[Idx]=(ByteH<<4) | ByteL;
        Err [Idx]=(ErrH <<4) | ErrL ;
      }
-     Deselect();
+     Deselect();                                                            // de-select RF chip: end of SPI transfer
    }
 
 #endif // USE_BLOCK_SPI
@@ -257,7 +328,7 @@ class RFM_TRX
      if(WriteSize>8) WriteSize=8;                                            // up to 8 bytes of SYNC can be programmed
      WriteBytes(SyncData+(8-WriteSize), WriteSize, REG_SYNCVALUE1);          // write the SYNC, skip some initial bytes
      WriteByte(  0x80 | ((WriteSize-1)<<3) | SyncTol, REG_SYNCCONFIG);       // write SYNC length [bytes] and tolerance to errors [bits]
-     WriteWord( 8-WriteSize, REG_PREAMBLEMSB); }                             // write preamble length [bytes] (page 71)
+     WriteWord( 9-WriteSize, REG_PREAMBLEMSB); }                             // write preamble length [bytes] (page 71)
 //              ^ 8 or 9 ?
 #endif
 
@@ -280,7 +351,7 @@ class RFM_TRX
    void ClearIrqFlags(void)    { WriteWord(RF_IRQ_FifoOverrun | RF_IRQ_Rssi, REG_IRQFLAGS1); }
 
 #ifdef WITH_RFM69
-   void WriteTxPower_W(int8_t TxPower=10) const // [dBm] for RFM69W: -18..+13dBm
+   void WriteTxPower_W(int8_t TxPower=10)       // [dBm] for RFM69W: -18..+13dBm
    { if(TxPower<(-18)) TxPower=(-18);           // check limits
      if(TxPower>  13 ) TxPower=  13 ;
      WriteByte(  0x80+(18+TxPower), REG_PALEVEL);
@@ -289,7 +360,7 @@ class RFM_TRX
      WriteByte(  0x70             , REG_TESTPA2);
    }
 
-   void WriteTxPower_HW(int8_t TxPower=10) const // [dBm] // for RFM69HW: -14..+20dBm
+   void WriteTxPower_HW(int8_t TxPower=10)       // [dBm] // for RFM69HW: -14..+20dBm
    { if(TxPower<(-14)) TxPower=(-14);            // check limits
      if(TxPower>  20 ) TxPower=  20 ;
      if(TxPower<=17)
@@ -305,12 +376,12 @@ class RFM_TRX
      }
    }
 
-   void WriteTxPower(int8_t TxPower, uint8_t isHW) const
-   { WriteByte(  0x09, REG_PARAMP); // Tx ramp up/down time = 40us (page 66)
+   void WriteTxPower(int8_t TxPower, uint8_t isHW)
+   { WriteByte(  0x09, REG_PARAMP); // Tx ramp up/down time 0x06=100us, 0x09=40us, 0x0C=20us, 0x0F=10us (page 66)
      if(isHW) WriteTxPower_HW(TxPower);
          else WriteTxPower_W (TxPower);  }
 
-   void WriteTxPowerMin(void) const { WriteTxPower_W(-18); } // set minimal Tx power and setup for reception
+   void WriteTxPowerMin(void) { WriteTxPower_W(-18); } // set minimal Tx power and setup for reception
 
    int Configure(int16_t Channel, const uint8_t *Sync)
    { WriteMode(RF_OPMODE_STANDBY);          // mode = STDBY
@@ -327,7 +398,7 @@ class RFM_TRX
      WriteByte(  0x00, REG_AUTOMODES);      // [0x00] all "none"
      WriteTxPowerMin();                     // TxPower (setup for reception)
      WriteByte(  0x08, REG_LNA);            // [0x08/88] bit #7 = LNA input impedance: 0=50ohm or 1=200ohm ?
-     WriteByte( 2*110, REG_RSSITHRESH);     // [0xE4] RSSI threshold = -110dBm
+     WriteByte( 2*112, REG_RSSITHRESH);     // [0xE4] RSSI threshold = -112dBm
      WriteByte(  0x42, REG_RXBW);           // [0x86/55] +/-125kHz Rx bandwidth => p.27+67 (A=100kHz, 2=125kHz, 9=200kHz, 1=250kHz)
      WriteByte(  0x82, REG_AFCBW);          // [0x8A/8B] +/-125kHz Rx bandwidth while AFC
      WriteWord(0x4047, REG_DIOMAPPING1);    // DIO signals: DIO0=01, DIO4=01, ClkOut=OFF
@@ -367,13 +438,15 @@ class RFM_TRX
      // ReadWord(REG_FDEVMSB);
      setChannel(Channel);                       // operating channel
      WriteSYNC(8, 7, Sync);                     // SYNC pattern (setup for reception)
+     WriteByte(  0x8A, REG_PREAMBLEDETECT);     // preamble detect: 1 byte, page 92
      WriteByte(  0x00, REG_PACKETCONFIG1);      // Fixed size packet, no DC-free encoding, no CRC, no address filtering
      WriteByte(  0x40, REG_PACKETCONFIG2);      // Packet mode
      WriteByte(    51, REG_FIFOTHRESH);         // TxStartCondition=FifoNotEmpty, FIFO threshold = 51 bytes
      WriteByte(  2*26, REG_PAYLOADLENGTH);      // Packet size = 26 bytes Manchester encoded into 52 bytes
-     WriteWord(0x00C0, REG_DIOMAPPING1);        // DIO signals: DIO0=00, DIO4=11
+     WriteWord(0x3030, REG_DIOMAPPING1);        // DIO signals: DIO0=00, DIO1=11, DIO2=00, DIO3=00, DIO4=00, DIO5=11, => p.64, 99
      WriteByte(  0x4A, REG_RXBW);               // +/-100kHz Rx bandwidth => p.27+67
      WriteByte(  0x49, REG_PARAMP);             // BT=0.5 shaping, 40us ramp up/down
+     WriteByte(  0x07, REG_RSSICONFIG);         // 256 samples for RSSI, p.90
 
      return 0; }
 

@@ -1,24 +1,17 @@
-#include "hal.h"
 
 #include "hal.h"
+#include "sens.h"
 
-#include <FreeRTOS.h>
-#include <task.h>
-#include <semphr.h>
-#include <queue.h>
+#include "timesync.h"
 
 #include "parameters.h"
 
-#include "sens.h"
-
-#include "main.h"
 #include "ctrl.h"
 #include "gps.h"
-#include "knob.h"
 
-#include "i2c.h"
+// #define DEBUG_PRINT
 
-#if defined(WITH_BMP180) || defined(WITH_BMP280)
+#if defined(WITH_BMP180) || defined(WITH_BMP280) || defined(WITH_MS5607)
 
 #ifdef WITH_BMP180
 #include "bmp180.h"
@@ -26,6 +19,10 @@
 
 #ifdef WITH_BMP280
 #include "bmp280.h"
+#endif
+
+#ifdef WITH_MS5607
+#include "ms5607.h"
 #endif
 
 #include "atmosphere.h"
@@ -66,6 +63,10 @@ static BMP180   Baro;                       // BMP180 barometer sensor
 static BMP280   Baro;                       // BMP280 barometer sensor
 #endif
 
+#ifdef WITH_MS5607
+static MS5607   Baro;                       // BMP280 barometer sensor
+#endif
+
 static uint32_t AverPress;                  // [ Pa] summed Pressure over several readouts
 static uint8_t  AverCount;                  // [int] number of summed Pressure readouts
 
@@ -80,52 +81,73 @@ static Delay<int32_t, 8>        PressDelay; // 4-second delay for long-term clim
 static char Line[64];                       // line to prepare the barometer NMEA sentence
 
 static uint8_t InitBaro()
-{ Baro.Bus=BARO_I2C;
+{ xSemaphoreTake(I2C_Mutex, portMAX_DELAY);
+  Baro.Bus=BARO_I2C;
   uint8_t Err=Baro.CheckID();
   if(Err==0) Err=Baro.ReadCalib();
 #ifdef WITH_BMP180
   if(Err==0) Err=Baro.AcquireRawTemperature();
   if(Err==0) { Baro.CalcTemperature(); AverPress=0; AverCount=0; }
 #endif
-#ifdef WITH_BMP280
+#if defined(WITH_BMP280) || defined(WITH_MS5607)
   if(Err==0) Err=Baro.Acquire();
   if(Err==0) { Baro.Calculate(); }
 #endif
+  xSemaphoreGive(I2C_Mutex);
+  // if(Err) LED_BAT_On();
   return Err==0 ? Baro.ADDR:0; }
 
-static void ProcBaro()
+static void ProcBaro(void)
 {
     static uint8_t PipeCount=0;
 
-    int16_t Sec  = 10*GPS_Sec;                                            // [0.1sec]
-    uint16_t Phase = PPS_Phase();                                         // sync to the GPS PPS
+    int16_t Sec  = 10*(TimeSync_Time()%60);                               // [0.1sec]
+    uint16_t Phase = TimeSync_msTime();                                   // sync to the GPS PPS
     if(Phase>=500) { Sec+=10; vTaskDelay(1000-Phase); }                   // wait till start of the measuring period
               else { Sec+= 5; vTaskDelay( 500-Phase); }
     if(Sec>=600) Sec-=600;                                                // [0.1sec] pressure measurement time
 
 #ifdef WITH_BMP180
     TickType_t Start=xTaskGetTickCount();
+    xSemaphoreTake(I2C_Mutex, portMAX_DELAY);
     uint8_t Err=Baro.AcquireRawTemperature();                             // measure temperature
+    xSemaphoreGive(I2C_Mutex);
     if(Err==0) { Baro.CalcTemperature(); AverPress=0; AverCount=0; }      // clear the average
           else { PipeCount=0;
-	         I2C_Restart(Baro.Bus, 400000); vTaskDelay(20); InitBaro(); // try to recover I2C bus and baro
+                 xSemaphoreTake(I2C_Mutex, portMAX_DELAY);
+	         I2C_Restart(Baro.Bus);
+                 xSemaphoreGive(I2C_Mutex);
+                 vTaskDelay(20);
+                 InitBaro(); // try to recover I2C bus and baro
 		 return; }
 
-    for(uint8_t Idx=0; Idx<24; Idx++)
-    { uint8_t Err=Baro.AcquireRawPressure();                              // take pressure measurement
+    for(uint8_t Idx=0; Idx<16; Idx++)
+    { xSemaphoreTake(I2C_Mutex, portMAX_DELAY);
+      uint8_t Err=Baro.AcquireRawPressure();                              // take pressure measurement
+      xSemaphoreGive(I2C_Mutex);
       if(Err==0) { Baro.CalcPressure(); AverPress+=Baro.Pressure; AverCount++; } // sum-up average pressure
-      TickType_t Time=xTaskGetTickCount()-Start; if(Time>=250) break; }   // but no longer than 250ms to fit into 0.5 second slot
+      TickType_t Time=xTaskGetTickCount()-Start; if(Time>=200) break; }   // but no longer than 250ms to fit into 0.5 second slot
 
     if(AverCount==0) { PipeCount=0; return ; }                          // and we summed-up some measurements
     AverPress = ( (AverPress<<2) + (AverCount>>1) )/AverCount;          // [0.25Pa]] make the average
+#ifdef DEBUG_PRINT
+    xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
+    Format_String(CONS_UART_Write, "BMP180: ");
+    Format_UnsDec(CONS_UART_Write, (AverPress+2)/4, 3, 2);
+    Format_String(CONS_UART_Write, "hPa/");
+    Format_UnsDec(CONS_UART_Write, (uint16_t)AverCount);
+    Format_String(CONS_UART_Write, "\n");
+    xSemaphoreGive(CONS_Mutex);
 #endif
-#ifdef WITH_BMP280
+#endif
+#if defined(WITH_BMP280) || defined(WITH_MS5607)
+    xSemaphoreTake(I2C_Mutex, portMAX_DELAY);
     uint8_t Err=Baro.Acquire();
+    xSemaphoreGive(I2C_Mutex);
     if(Err==0) { Baro.Calculate(); }
           else { PipeCount=0; return; }
     AverPress = Baro.Pressure;                                          // [0.25Pa]
 #endif
-
     BaroPipe.Input(AverPress);                                          // [0.25Pa]
     if(PipeCount<255) PipeCount++;                                      // count data going to the slope fitting pipe
     if(PipeCount<4) return;
@@ -158,11 +180,24 @@ static void ProcBaro()
     uint8_t Frac = Sec%10;                                           // [0.1s]
     if(Frac==0)
     { GPS_Position *PosPtr = GPS_getPosition(Sec/10);                // get GPS position record for this second
+#ifdef DEBUG_PRINT
+      xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
+      Format_String(CONS_UART_Write, "ProcBaro: ");
+      Format_UnsDec(CONS_UART_Write, (uint16_t)Sec, 3, 1);
+      Format_String(CONS_UART_Write, "s -> GPS: ");
+      if(PosPtr)
+      { Format_UnsDec(CONS_UART_Write, (uint16_t)PosPtr->Sec, 2);
+        CONS_UART_Write('.');
+        Format_UnsDec(CONS_UART_Write, (uint16_t)PosPtr->FracSec, 2);
+        CONS_UART_Write('s'); }
+      Format_String(CONS_UART_Write, "\n");
+      xSemaphoreGive(CONS_Mutex);
+#endif
       if(PosPtr)                                                     // if found:
       { PosPtr->Pressure    = Pressure;                              // [0.25Pa]
         PosPtr->StdAltitude = StdAltitude;                           // store standard pressure altitude
         PosPtr->Temperature = Baro.Temperature;                      // and temperature in the GPS record
-        PosPtr->Baro=1; }                                            // tick "hasBaro" flag
+        PosPtr->hasBaro=1; }                                         // tick "hasBaro" flag
     }
 
     uint8_t Len=0;                                                   // start preparing the barometer NMEA sentence
@@ -182,9 +217,16 @@ static void ProcBaro()
     Len+=Format_SignDec(Line+Len, ClimbRate,   3, 2);                // [m/s] climb rate
     Line[Len++]=',';
     Len+=NMEA_AppendCheckCRNL(Line, Len);
-    xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
-    Format_String(CONS_UART_Write, Line, Len);                           // send NMEA sentence to the console (UART1)
-    xSemaphoreGive(CONS_Mutex);
+    // if(CONS_UART_Free()>=128)
+    { xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
+      Format_String(CONS_UART_Write, Line, 0, Len);                       // send NMEA sentence to the console (UART1)
+      xSemaphoreGive(CONS_Mutex); }
+#ifdef WITH_SDLOG
+    if(Log_Free()>=128)
+    { xSemaphoreTake(Log_Mutex, portMAX_DELAY);
+      Format_String(Log_Write, Line, Len);                             // send NMEA sentence to the log file
+      xSemaphoreGive(Log_Mutex); }
+#endif
 
     Len=0;                                                           // start preparing the PGRMZ NMEA sentence
     Len+=Format_String(Line+Len, "$PGRMZ,");
@@ -193,15 +235,10 @@ static void ProcBaro()
     Len+=Format_String(Line+Len, "m,");                              // normally f for feet, but metres and m works with XcSoar
     Len+=Format_String(Line+Len, "3");                               // 1 no fix, 2 - 2D, 3 - 3D; assume 3D for now
     Len+=NMEA_AppendCheckCRNL(Line, Len);
-    xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
-    Format_String(CONS_UART_Write, Line, Len);                           // send NMEA sentence to the console (UART1)
-    xSemaphoreGive(CONS_Mutex);
-
-#ifdef WITH_SDLOG
-    xSemaphoreTake(Log_Mutex, portMAX_DELAY);
-    Format_String(Log_Write, Line, Len);                             // send NMEA sentence to the log file
-    xSemaphoreGive(Log_Mutex);
-#endif
+    // if(CONS_UART_Free()>=128)
+    { xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
+      Format_String(CONS_UART_Write, Line, 0, Len);                           // send NMEA sentence to the console (UART1)
+      xSemaphoreGive(CONS_Mutex); }
 
 }
 
@@ -217,6 +254,7 @@ void vTaskSENS(void* pvParameters)
 //   VarioSound(0);
 // #endif
 
+#if defined(WITH_BMP180) || defined(WITH_BMP280) || defined(WITH_MS5607)
   BaroPipe.Clear  (4*90000);
   BaroNoise.Set(12*16);                // guess the pressure noise level
 
@@ -226,6 +264,7 @@ void vTaskSENS(void* pvParameters)
   PressDelay.Clear(4*101300);
 
   uint8_t Detected = InitBaro();
+#endif
 
   xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
   Format_String(CONS_UART_Write, "TaskSENS:");
@@ -237,7 +276,13 @@ void vTaskSENS(void* pvParameters)
 #endif
 
 #ifdef WITH_BMP280
-  Format_String(CONS_UART_Write, " BM280: ");
+  Format_String(CONS_UART_Write, " BMP280: ");
+  if(Detected) { Format_String(CONS_UART_Write, " @"); Format_Hex(CONS_UART_Write, Detected); }
+         else  Format_String(CONS_UART_Write, " ?!");
+#endif
+
+#ifdef WITH_MS5607
+  Format_String(CONS_UART_Write, " MS5607: ");
   if(Detected) { Format_String(CONS_UART_Write, " @"); Format_Hex(CONS_UART_Write, Detected); }
          else  Format_String(CONS_UART_Write, " ?!");
 #endif
@@ -247,7 +292,7 @@ void vTaskSENS(void* pvParameters)
 
   while(1)
   {
-#if defined(WITH_BMP180) || defined(WITH_BMP280)
+#if defined(WITH_BMP180) || defined(WITH_BMP280) || defined(WITH_MS5607)
     ProcBaro();
 #else
     vTaskDelay(1000);

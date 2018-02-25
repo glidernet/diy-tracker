@@ -36,13 +36,11 @@ TCHAIN = arm-none-eabi
 # ogn_cube_1    ... Tracker hardware by Miroslav Cervenka
 # swap_uarts    ... use UART1 for GPS and UART2 for console
 
-# lookout       ...
-
 # WITH_OPTS = blue_pill rfm69 beeper vario i2c1 bmp180 knob  relay config pps_irq # for regular tracker with a knob and BMP180 but no SD card
 # WITH_OPTS = blue_pill rfm69 beeper vario i2c1 bmp180 sdlog relay config # for the test system (no knob but the SD card)
-# WITH_OPTS = blue_pill rfm69 beeper vario i2c1 bmp180 lookout relay config gps_pps gps_enable gps_ubx_pass gps_nmea_pass pps_irq
+# WITH_OPTS = blue_pill rfm69 beeper vario i2c1 bmp180 relay config gps_pps gps_enable gps_ubx_pass gps_nmea_pass pps_irq
 # WITH_OPTS = maple_mini rfm69 i2c1 bmp180 relay config gps_pps pps_irq gps_enable
-WITH_OPTS = blue_pill rfm69 beeper i2c1 bmp180 relay lookout config gps_pps pps_irq gps_enable gps_ubx_pass gps_nmea_pass
+WITH_OPTS = blue_pill rfm69 beeper i2c1 bmp180 relay config gps_pps gps_enable flashlog # gps_ubx_pass gps_nmea_pass
 # WITH_OPTS = blue_pill rfm69 beeper vario i2c1 bmp180 relay config gps_pps pps_irq gps_enable
 # WITH_OPTS = blue_pill rfm69 beeper relay config
 # WITH_OPTS = blue_pill rfm95 beeper vario i2c1 bmp180 relay config
@@ -58,8 +56,10 @@ RTOS = FreeRTOS_9.0.0
 C_SRC += main.cpp
 C_SRC += hal.cpp
 
+C_SRC += timesync.cpp
 C_SRC += gps.cpp
 C_SRC += rf.cpp
+C_SRC += proc.cpp
 C_SRC += ctrl.cpp
 C_SRC += sens.cpp
 C_SRC += knob.cpp
@@ -111,13 +111,13 @@ endif
 
 ifneq ($(findstring i2c1,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_I2C1
-  WITH_DEFS += -DBARO_I2C=I2C1
+  WITH_DEFS += -DBARO_I2C=0
   C_SRC  += i2c.cpp
 endif
 
 ifneq ($(findstring i2c2,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_I2C2
-  WITH_DEFS += -DBARO_I2C=I2C2
+  WITH_DEFS += -DBARO_I2C=1
   C_SRC  += i2c.cpp
 endif
 
@@ -173,10 +173,6 @@ endif
 
 ifneq ($(findstring relay,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_RELAY
-endif
-
-ifneq ($(findstring lookout,$(WITH_OPTS)),)
-  WITH_DEFS += -DWITH_LOOKOUT
 endif
 
 ifneq ($(findstring gps_pps,$(WITH_OPTS)),)

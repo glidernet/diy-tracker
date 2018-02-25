@@ -12,8 +12,8 @@
 
 #include "uart1.h"
 
-VolatileFIFO<uint8_t, UART1_RxFIFO_Size> UART1_RxFIFO;
-VolatileFIFO<uint8_t, UART1_TxFIFO_Size> UART1_TxFIFO;
+FIFO<uint8_t, UART1_RxFIFO_Size> UART1_RxFIFO;
+FIFO<uint8_t, UART1_TxFIFO_Size> UART1_TxFIFO;
 
 // UART1 pins:
 // PA8 	USART1_CK
@@ -59,7 +59,8 @@ void UART1_Write(char Byte)
 { if(UART1_TxFIFO.isEmpty()) { UART1_TxFIFO.Write(Byte); UART1_TxKick(); return; }
   if(UART1_TxFIFO.Write(Byte)>0) return;
   UART1_TxKick();
-  while(UART1_TxFIFO.Write(Byte)<=0) taskYIELD();
+  while(UART1_TxFIFO.Write(Byte)<=0) vTaskDelay(1); // taskYIELD();
   return; }
 
-
+int UART1_Free(void) { return UART1_TxFIFO.Free(); }
+int UART1_Full(void) { return UART1_TxFIFO.Full(); }

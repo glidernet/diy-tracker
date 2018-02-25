@@ -1,5 +1,32 @@
 #include "uart.h"
 
+// source:
+// https://my.st.com/public/STe2ecommunities/mcu/Lists/cortex_mx_stm32/DispForm.aspx?ID=27834&Source=/public/STe2ecommunities/mcu/Tags.aspx?tags=stm32%20usart%20interrupt
+// https://my.st.com/public/STe2ecommunities/mcu/Lists/cortex_mx_stm32/DispForm.aspx?ID=24064&Source=/public/STe2ecommunities/mcu/Tags.aspx?tags=stm32%20usart%20interrupt
+// http://electronics.stackexchange.com/questions/100073/stm32-usart-rx-interrupts
+// https://my.st.com/public/STe2ecommunities/mcu/Lists/STM32Discovery/Flat.aspx?RootFolder=%2Fpublic%2FSTe2ecommunities%2Fmcu%2FLists%2FSTM32Discovery%2FUART%20example%20code%20for%20STM32F$
+
+// UART pins:
+// Pin  Function
+//
+// PA8  USART1_CK
+// PA11 USART1_CTS
+// PA12 USART1_RTS
+// PA9  USART1_TX
+// PA10 USART1_RX
+//
+// PA4  USART2_CK
+///PA0  USART2_CTS
+// PA1  USART2_RTS
+// PA2  USART2_TX
+// PA3  USART2_RX
+//
+// PB12 USART3_CK
+// PB13 USART3_CTS
+// PB14 USART3_RTS
+// PB10 USART3_TX
+// PB11 USART3_RX
+
 void UART_ConfigNVIC(uint8_t IRQ, uint8_t Priority, uint8_t SubPriority)
 {
   NVIC_InitTypeDef NVIC_InitStructure;

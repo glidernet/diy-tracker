@@ -2,16 +2,10 @@
 #include <string.h>
 #include <math.h>
 
-#include "nmea.h"
-#include "format.h"
-
-#ifndef NO_RTOS
-#include "i2c.h"
-#endif
+#include "hal.h"
 
 class BMP180
 { private:
-#ifndef NO_RTOS
   public:
    static const uint8_t ADDR         = 0x77; // BMP180 I2C address
   private:
@@ -26,17 +20,19 @@ class BMP180
    static const uint8_t REG_ADC_MSB  = 0xF6; // ADC result: MSB
    static const uint8_t REG_ADC_LSB  = 0xF7; // ADC result: LSB
    static const uint8_t REG_ADC_XLSB = 0xF8; // ADC result: more LSB
-#endif
    static const uint8_t MEAS_OSS     = 0x03; // oversampling factor: 0=single, 1=two, 2=four, 3=eight samples
   public:
-#ifndef NO_RTOS
-   I2C_TypeDef* Bus;         // which I2C bus
-#endif
+   uint8_t Bus;         // which I2C bus
   private:
-   int16_t AC1, AC2, AC3;    // 11 calibration values from EEPROM
-  uint16_t AC4, AC5, AC6;
-   int16_t  B1,  B2;
-   int16_t  MB,  MC,  MD;
+   union
+   { int16_t Calib[11];
+     struct
+     { int16_t AC1, AC2, AC3;    // 11 calibration values from EEPROM
+      uint16_t AC4, AC5, AC6;
+       int16_t  B1,  B2;
+       int16_t  MB,  MC,  MD;
+     } ;
+   } ;
    int32_t  B5;              // temperature compensation for pressure ?
   public:
      uint8_t Error;          //      error on the I2C bus (0=no error)
@@ -56,7 +52,6 @@ class BMP180
 
   public:
 
-#ifdef NO_RTOS
   void DefaultCalib(void)    // set default calibration constants
   { AC1 =    408;
     AC2 =    -72;
@@ -69,16 +64,15 @@ class BMP180
     MB  = -32768;
     MC  =  -8711;
     MD  =   2868; }
-#endif
-#ifndef NO_RTOS
+
   uint8_t CheckID(void) // check ID, to make sure the BMP180 is connected and works correctly
    { uint8_t ID;
      Error=I2C_Read(Bus, ADDR, REG_ID, ID); if(Error) return Error;
      return ID!=0x55; } // 0 => no error and correct ID
 
   uint8_t ReadCalib(void) // read the calibration constants from the EEPROM
-  { Error=I2C_Read(Bus, ADDR, REG_CALIB, (uint8_t *)(&AC1), 22); if(Error) return Error;
-    SwapBytes((uint16_t *)(&AC1), 22 ); return Error; }
+  { Error=I2C_Read(Bus, ADDR, REG_CALIB, (uint8_t *)Calib, 2*11); if(Error) return Error;
+    SwapBytes((uint16_t *)Calib, 2*11 ); return Error; }
 
   uint8_t ReadReady(void) // check if temperature or pressure conversion is done
   { uint8_t MeasCtrl;
@@ -122,7 +116,6 @@ class BMP180
     uint8_t Timeout = (((uint8_t)1<<MEAS_OSS)+2)<<1;
     Err=WaitReady(Timeout, Timeout); if(Err) return Err;
     return ReadRawPressure(); }
-#endif
 
 // temperature and pressure calculation routines takes from the datasheet
 

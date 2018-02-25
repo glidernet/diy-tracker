@@ -30,7 +30,7 @@ void vTaskKNOB(void* pvParameters)
     uint16_t PrevKnob = ((uint16_t)Tick<<8)+0x80;
      int16_t Err      = Knob-PrevKnob;
     if(abs(Err)>=(0x80+0x20))                              // 0x20 is the histeresis to avoid noisy input
-    { KNOB_Tick = (Tick = (Knob>>8)); Play(0x40+Tick, 10);
+    { KNOB_Tick = (Tick = (Knob>>8)); Play(Play_Oct_1 | Tick, 10);
       // xSemaphoreTake(CONS_Mutex, portMAX_DELAY);
       // Format_UnsDec(CONS_UART_Write, (uint16_t)Tick);
       // CONS_UART_Write('\r'); CONS_UART_Write('\n');

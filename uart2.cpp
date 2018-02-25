@@ -12,8 +12,8 @@
 
 #include "fifo.h"
 
-VolatileFIFO<uint8_t, UART2_RxFIFO_Size> UART2_RxFIFO;
-VolatileFIFO<uint8_t, UART2_TxFIFO_Size> UART2_TxFIFO;
+FIFO<uint8_t, UART2_RxFIFO_Size> UART2_RxFIFO;
+FIFO<uint8_t, UART2_TxFIFO_Size> UART2_TxFIFO;
 
 // UART2 pins:
 // PA4 	USART2_CK
@@ -58,9 +58,11 @@ void UART2_Write(char Byte)
 { if(UART2_TxFIFO.isEmpty()) { UART2_TxFIFO.Write(Byte); UART2_TxKick(); return; }
   if(UART2_TxFIFO.Write(Byte)>0) return;
   UART2_TxKick();
-  while(UART2_TxFIFO.Write(Byte)<=0) taskYIELD();
+  while(UART2_TxFIFO.Write(Byte)<=0) vTaskDelay(1); // taskYIELD();
   return; }
 
-// Note: UARTx_Write() can only be used after the RTOS is started as they use taskYIELD()
+// Note: UARTx_Write() can only be used after the RTOS is started as they use vTaskDelay()/taskYIELD()
 
+int UART2_Free(void) { return UART2_TxFIFO.Free(); }
+int UART2_Full(void) { return UART2_TxFIFO.Full(); }
 
