@@ -97,7 +97,7 @@ static void ReadStatus(OGN_TxPacket &StatPacket)
 #ifdef WITH_SDLOG
     if(Log_Free()>=128)
     { xSemaphoreTake(Log_Mutex, portMAX_DELAY);
-      Format_String(Log_Write, Line, Len);                                     // send the NMEA out to the log file
+      Format_String(Log_Write, Line, Len, 0);                                     // send the NMEA out to the log file
       xSemaphoreGive(Log_Mutex); }
 #endif
   }
@@ -125,7 +125,7 @@ static void ProcessRxPacket(OGN_RxPacket *RxPacket, uint8_t RxPacketIdx)        
 #ifdef WITH_SDLOG
     if(Log_Free()>=128)
     { xSemaphoreTake(Log_Mutex, portMAX_DELAY);
-      Format_String(Log_Write, Line, Len);
+      Format_String(Log_Write, Line, Len, 0);
       xSemaphoreGive(Log_Mutex); }
 #endif
 #ifdef WITH_PFLAA

@@ -224,7 +224,7 @@ static void ProcBaro(void)
 #ifdef WITH_SDLOG
     if(Log_Free()>=128)
     { xSemaphoreTake(Log_Mutex, portMAX_DELAY);
-      Format_String(Log_Write, Line, Len);                             // send NMEA sentence to the log file
+      Format_String(Log_Write, Line, Len, 0);                             // send NMEA sentence to the log file
       xSemaphoreGive(Log_Mutex); }
 #endif
 
