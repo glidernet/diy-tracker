@@ -28,6 +28,7 @@ TCHAIN = arm-none-eabi
 # relay         ... packet-relay code (conditional code not implemented yet)
 # gps_pps       ... GPS does deliver PPS, otherwise we get the timing from when the GPS starts sending serial data
 # gps_enable    ... GPS senses the "enable" line so it is possibly to shut it down
+# gps_ubx       ... GPS supports UBX protocol - for GPS configuration
 # gps_ubx_pass  ... pass UBX messages between the console and the GPS - for GPS configuration
 # gps_nmea_pass ... pass (P-private) NMEA messages between the console and the GPS - for GPS configuration
 
@@ -186,6 +187,10 @@ endif
 
 ifneq ($(findstring gps_enable,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_GPS_ENABLE
+endif
+
+ifneq ($(findstring gps_ubx,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_GPS_CONFIG -DWITH_GPS_UBX
 endif
 
 ifneq ($(findstring gps_ubx_pass,$(WITH_OPTS)),)
