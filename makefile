@@ -3,7 +3,8 @@
 
 # TPATH = ../../gcc-arm-none-eabi-4.9/bin
 # TPATH = ../gcc-arm-none-eabi-5.4/bin
-TPATH = /usr/bin
+# TPATH = /usr/bin
+TPATH = /opt/arm-tools/gcc-arm-none-eabi-6-2017-q2-update/bin
 TCHAIN = arm-none-eabi
 
 #-------------------------------------------------------------------------------
@@ -13,6 +14,7 @@ TCHAIN = arm-none-eabi
 # sdcard        ... SD card interface with FAT filesystem
 # bmp180        ... barometric pressure bmp180 sensor
 # bmp280        ... barometric pressure bmp280 sensor
+# bme280        ... barometric pressure and humidity bme280 sensor
 # beeper        ... beeper
 # vario         ... vario sound (selects beeper)
 # sdlog         ... logging to sdcard (selects sdcard too)
@@ -41,15 +43,17 @@ TCHAIN = arm-none-eabi
 # WITH_OPTS = blue_pill rfm69 beeper vario i2c1 bmp180 sdlog relay config # for the test system (no knob but the SD card)
 # WITH_OPTS = blue_pill rfm69 beeper vario i2c1 bmp180 relay config gps_pps gps_enable gps_ubx_pass gps_nmea_pass
 # WITH_OPTS = maple_mini rfm69 i2c1 bmp180 relay config gps_pps gps_enable
-WITH_OPTS = blue_pill rfm69 beeper i2c1 bmp180 relay config gps_pps gps_enable flashlog # gps_ubx_pass gps_nmea_pass
+# WITH_OPTS = blue_pill rfm69 beeper i2c1 bmp180 relay config gps_pps gps_enable flashlog # gps_ubx_pass gps_nmea_pass
 # WITH_OPTS = blue_pill rfm69 beeper vario i2c1 bmp180 relay config gps_pps gps_enable
 # WITH_OPTS = blue_pill rfm69 beeper relay config
 # WITH_OPTS = blue_pill rfm95 beeper vario i2c1 bmp280 relay config
 # WITH_OPTS = blue_pill beeper vario i2c1 bmp280 config gps_pps batt_sense rf_irq sx1272 relay
+WITH_OPTS = blue_pill i2c1 bmp280 config gps_pps pps_irq rf_irq rfm69 relay sdcard sdlog
 
 # WITH_OPTS = rfm69 relay config swap_uarts i2c2 bmp280 ogn_cube_1 # for OGN-CUBE-1
 
 # MCU = STM32F103C8  # STM32F103C8 for no-name STM32F1 board, STM32F103CB for Maple mini
+MCU = STM32F103CB
 
 RTOS = FreeRTOS_9.0.0
 
@@ -110,6 +114,12 @@ ifneq ($(findstring bmp280,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_BMP280
   C_SRC += atmosphere.cpp
 endif
+
+ifneq ($(findstring bme280,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_BME280
+  C_SRC += atmosphere.cpp
+endif
+
 
 ifneq ($(findstring i2c1,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_I2C1
