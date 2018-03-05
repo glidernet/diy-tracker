@@ -410,8 +410,8 @@ void (*RF_IRQ_Callback)(void) = 0;
 #ifdef __cplusplus
   extern "C"
 #endif
-#ifdef WITH_BLUE_PILL
-void EXTI4_IRQHandler(void)                                        // RF chip DIO0 interrupt
+#if defined(WITH_BLUE_PILL) || defined(WITH_MAPLE_MINI)          
+void EXTI4_IRQHandler(void)                                      // RF chip DIO0 interrupt
 {
   if(EXTI_GetITStatus(EXTI_Line4) != RESET)
   { if(RF_IRQ_Callback) (*RF_IRQ_Callback)(); }                  // execute the callback
@@ -419,7 +419,7 @@ void EXTI4_IRQHandler(void)                                        // RF chip DI
 }
 #endif
 #ifdef WITH_OGN_CUBE_1
-void EXTI2_IRQHandler(void)                                        // RF chip DIO0 interrupt
+void EXTI2_IRQHandler(void)                                      // RF chip DIO0 interrupt
 {
   if(EXTI_GetITStatus(EXTI_Line2) != RESET)
   { if(RF_IRQ_Callback) (*RF_IRQ_Callback)(); }                  // execute the callback
