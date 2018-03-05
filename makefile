@@ -44,7 +44,7 @@ TCHAIN = arm-none-eabi
 # WITH_OPTS = blue_pill rfm69 beeper vario i2c1 bmp180 sdlog relay config # for the test system (no knob but the SD card)
 # WITH_OPTS = blue_pill rfm69 beeper vario i2c1 bmp180 relay config gps_pps gps_enable gps_ubx_pass gps_nmea_pass
 # WITH_OPTS = maple_mini rfm69 i2c1 bmp180 relay config gps_pps gps_enable
-WITH_OPTS = blue_pill rfm69 beeper i2c1 bmp180 relay config gps_config gps_ubx gps_pps gps_enable flashlog # gps_ubx_pass gps_nmea_pass
+WITH_OPTS = blue_pill rfm69 beeper i2c1 bmp180 relay pflaa config gps_config gps_ubx gps_pps gps_enable flashlog # gps_ubx_pass gps_nmea_pass
 # WITH_OPTS = blue_pill rfm69 beeper vario i2c1 bmp180 relay config gps_pps gps_enable
 # WITH_OPTS = blue_pill rfm69 beeper relay config
 # WITH_OPTS = blue_pill rfm95 beeper vario i2c1 bmp280 relay config
@@ -121,7 +121,6 @@ ifneq ($(findstring bme280,$(WITH_OPTS)),)
   C_SRC += atmosphere.cpp
 endif
 
-
 ifneq ($(findstring i2c1,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_I2C1
   WITH_DEFS += -DBARO_I2C=0
@@ -190,6 +189,10 @@ endif
 
 ifneq ($(findstring relay,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_RELAY
+endif
+
+ifneq ($(findstring pflaa,$(WITH_OPTS)),)
+  WITH_DEFS += -DWITH_PFLAA
 endif
 
 ifneq ($(findstring gps_pps,$(WITH_OPTS)),)
