@@ -84,8 +84,17 @@ class BME280: public BMP280
     RawHum = SwapBytes(RawHum);
     return 0; }
 
+/********* this doesn't work because BMP280::Acquire() will call BMP280::Trigger() which doesn't write H.osp
   uint8_t Acquire(void)
   { Error=BMP280::Acquire(); if(Error) return Error;
+    return ReadRawHum(); }
+********** hence we have to unfold Acquire() here ****/
+
+  uint8_t Acquire(void)
+  { if(Trigger()) return Error;
+    if(BMP280::WaitReady()!=1) return Error;
+    if(BMP280::ReadRawTemp()) return Error;
+    if(BMP280::ReadRawPress()) return Error;
     return ReadRawHum(); }
 
   void Calculate(void)
