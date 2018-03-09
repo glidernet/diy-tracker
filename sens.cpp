@@ -89,7 +89,7 @@ static Delay<int32_t, 8>        PressDelay; // 4-second delay for long-term clim
 static char Line[64];                       // line to prepare the barometer NMEA sentence
 
 static uint8_t InitBaro()
-{ xSemaphoreTake(I2C_Mutex, portMAX_DELAY);
+{ // xSemaphoreTake(I2C_Mutex, portMAX_DELAY);
   Baro.Bus=BARO_I2C;
   uint8_t Err=Baro.CheckID();
   if(Err==0) Err=Baro.ReadCalib();
@@ -101,7 +101,7 @@ static uint8_t InitBaro()
   if(Err==0) Err=Baro.Acquire();
   if(Err==0) { Baro.Calculate(); }
 #endif
-  xSemaphoreGive(I2C_Mutex);
+  // xSemaphoreGive(I2C_Mutex);
   // if(Err) LED_BAT_On();
   return Err==0 ? Baro.ADDR:0; }
 
@@ -117,22 +117,22 @@ static void ProcBaro(void)
 
 #ifdef WITH_BMP180
     TickType_t Start=xTaskGetTickCount();
-    xSemaphoreTake(I2C_Mutex, portMAX_DELAY);
+    // xSemaphoreTake(I2C_Mutex, portMAX_DELAY);
     uint8_t Err=Baro.AcquireRawTemperature();                             // measure temperature
-    xSemaphoreGive(I2C_Mutex);
+    // xSemaphoreGive(I2C_Mutex);
     if(Err==0) { Baro.CalcTemperature(); AverPress=0; AverCount=0; }      // clear the average
           else { PipeCount=0;
-                 xSemaphoreTake(I2C_Mutex, portMAX_DELAY);
+                 // xSemaphoreTake(I2C_Mutex, portMAX_DELAY);
 	         I2C_Restart(Baro.Bus);
-                 xSemaphoreGive(I2C_Mutex);
+                 // xSemaphoreGive(I2C_Mutex);
                  vTaskDelay(20);
                  InitBaro(); // try to recover I2C bus and baro
 		 return; }
 
     for(uint8_t Idx=0; Idx<16; Idx++)
-    { xSemaphoreTake(I2C_Mutex, portMAX_DELAY);
+    { // xSemaphoreTake(I2C_Mutex, portMAX_DELAY);
       uint8_t Err=Baro.AcquireRawPressure();                              // take pressure measurement
-      xSemaphoreGive(I2C_Mutex);
+      // xSemaphoreGive(I2C_Mutex);
       if(Err==0) { Baro.CalcPressure(); AverPress+=Baro.Pressure; AverCount++; } // sum-up average pressure
       TickType_t Time=xTaskGetTickCount()-Start; if(Time>=200) break; }   // but no longer than 250ms to fit into 0.5 second slot
 
@@ -149,9 +149,9 @@ static void ProcBaro(void)
 #endif
 #endif
 #if defined(WITH_BMP280) || defined(WITH_MS5607) || defined(WITH_BME280)
-    xSemaphoreTake(I2C_Mutex, portMAX_DELAY);
+    // xSemaphoreTake(I2C_Mutex, portMAX_DELAY);
     uint8_t Err=Baro.Acquire();
-    xSemaphoreGive(I2C_Mutex);
+    // xSemaphoreGive(I2C_Mutex);
     if(Err==0) { Baro.Calculate(); }
           else { PipeCount=0; return; }
     AverPress = Baro.Pressure;                                          // [0.25Pa]

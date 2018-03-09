@@ -130,7 +130,7 @@ uint8_t Play_Busy(void);              // check is the queue is empty or still bu
 
 #define I2C_SPEED 400000
 
-extern SemaphoreHandle_t I2C_Mutex;        // I2C port Mutex (OLED and Baro)
+// extern SemaphoreHandle_t I2C_Mutex;        // I2C port Mutex (OLED and Baro)
 
 uint8_t I2C_Read (uint8_t Bus, uint8_t Addr, uint8_t Reg, uint8_t *Data, uint8_t Len, uint8_t Wait=10);
 uint8_t I2C_Write(uint8_t Bus, uint8_t Addr, uint8_t Reg, uint8_t *Data, uint8_t Len, uint8_t Wait=10);

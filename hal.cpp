@@ -432,6 +432,30 @@ uint8_t RFM_TransferByte(uint8_t Byte) { return SPI1_TransferByte(Byte); }
 
 // -------------------------------------------------------------------------------------------------------
 
+SemaphoreHandle_t I2C_Mutex[2];
+
+static I2C_TypeDef *I2C_Bus[2] = { I2C1, I2C2 } ;
+
+uint8_t I2C_Read(uint8_t Bus, uint8_t Addr, uint8_t Reg, uint8_t *Data, uint8_t Len, uint8_t Wait)
+{ xSemaphoreTake(I2C_Mutex[Bus], portMAX_DELAY);
+  uint8_t Err=I2C_Read(I2C_Bus[Bus], Addr, Reg, Data, Len);
+  xSemaphoreGive(I2C_Mutex[Bus]);
+  return Err; }
+
+uint8_t I2C_Write(uint8_t Bus, uint8_t Addr, uint8_t Reg, uint8_t *Data, uint8_t Len, uint8_t Wait)
+{ xSemaphoreTake(I2C_Mutex[Bus], portMAX_DELAY);
+  uint8_t Err=I2C_Write(I2C_Bus[Bus], Addr, Reg, Data, Len);
+  xSemaphoreGive(I2C_Mutex[Bus]);
+  return Err; }
+
+uint8_t I2C_Restart(uint8_t Bus)
+{ xSemaphoreTake(I2C_Mutex[Bus], portMAX_DELAY);
+  I2C_Restart(I2C_Bus[Bus], I2C_SPEED);
+  xSemaphoreGive(I2C_Mutex[Bus]);
+  return 0; }
+
+// -------------------------------------------------------------------------------------------------------
+
 SemaphoreHandle_t ADC1_Mutex; // ADC1 Mutex for Knob, temperature/voltage readout, etc.
 
 uint16_t ADC_Read_MCU_Vtemp(void) { return ADC1_Read(ADC_Channel_TempSensor); }
@@ -624,7 +648,8 @@ void IO_Configuration(void)
 #endif
 
 #if defined(WITH_I2C1) || defined(WITH_I2C2)
-  I2C_Mutex = xSemaphoreCreateMutex();
+  I2C_Mutex[0] = xSemaphoreCreateMutex();
+  I2C_Mutex[1] = xSemaphoreCreateMutex();
 #endif
 
   IWDG_Configuration();                    // setup watch-dog
@@ -763,17 +788,3 @@ void vApplicationTickHook(void) // RTOS timer tick hook
 
 // -------------------------------------------------------------------------------------------------------
 
-SemaphoreHandle_t I2C_Mutex;
-
-static I2C_TypeDef *I2C_Bus[2] = { I2C1, I2C2 } ;
-
-uint8_t I2C_Read(uint8_t Bus, uint8_t Addr, uint8_t Reg, uint8_t *Data, uint8_t Len, uint8_t Wait)
-{ return I2C_Read(I2C_Bus[Bus], Addr, Reg, Data, Len); }
-
-uint8_t I2C_Write(uint8_t Bus, uint8_t Addr, uint8_t Reg, uint8_t *Data, uint8_t Len, uint8_t Wait)
-{ return I2C_Write(I2C_Bus[Bus], Addr, Reg, Data, Len); }
-
-uint8_t I2C_Restart(uint8_t Bus)
-{ I2C_Restart(I2C_Bus[Bus], I2C_SPEED); return 0; }
-
-// -------------------------------------------------------------------------------------------------------
