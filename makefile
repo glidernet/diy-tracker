@@ -104,7 +104,7 @@ C_SRC  += $(RTOS)/Source/portable/MemMang/heap_4.c
 # ..............................................................................
 
 WITH_OPTS ?=
-WITH_DEFS =
+WITH_DEFS = -DWITH_AUTOCR
 
 ifneq ($(findstring bmp180,$(WITH_OPTS)),)
   WITH_DEFS += -DWITH_BMP180

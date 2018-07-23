@@ -19,32 +19,37 @@ const uint8_t MAV_COMP_ID_ADSB            = 156; // ADS-B receiver
 const uint8_t MAV_COMP_ID_GPS             = 220;
 
 // Message-ID
-const uint8_t MAV_ID_HEARTBEAT             =  0; //
-const uint8_t MAV_ID_SYS_STATUS            =  1;
-const uint8_t MAV_ID_SYSTEM_TIME           =  2;
-const uint8_t MAV_ID_GPS_RAW_INT           = 24; // GPS position estimate
-const uint8_t MAV_ID_RAW_IMU               = 27;
-const uint8_t MAV_ID_SCALED_PRESSURE       = 29; //
-const uint8_t MAV_ID_ATTITUDE              = 30;
-const uint8_t MAV_ID_GLOBAL_POSITION_INT   = 33; // combined position estimate
-const uint8_t MAV_ID_RC_CHANNELS_RAW       = 35;
-const uint8_t MAV_ID_SERVO_OUTPUT_RAW      = 36;
-const uint8_t MAV_ID_MISSION_CURRENT       = 42;
-const uint8_t MAV_ID_NAV_CONTROLLER_OUTPUT = 62;
-const uint8_t MAV_ID_VFR_HUD               = 74;
+const uint8_t MAV_ID_HEARTBEAT             =  0; // + 
+const uint8_t MAV_ID_SYS_STATUS            =  1; // + power data
+const uint8_t MAV_ID_SYSTEM_TIME           =  2; // + boot and UTC time
+const uint8_t MAV_ID_PARAM_VALUE           = 22; // + value of an parameter
+const uint8_t MAV_ID_GPS_RAW_INT           = 24; // + position after the GPS
+const uint8_t MAV_ID_RAW_IMU               = 27; // +
+const uint8_t MAV_ID_SCALED_PRESSURE       = 29; // + pressure+temperature
+const uint8_t MAV_ID_ATTITUDE              = 30; //
+const uint8_t MAV_ID_GLOBAL_POSITION_INT   = 33; // + combined position estimate
+const uint8_t MAV_ID_RC_CHANNELS_RAW       = 35; //
+const uint8_t MAV_ID_SERVO_OUTPUT_RAW      = 36; //
+const uint8_t MAV_ID_MISSION_CURRENT       = 42; //
+const uint8_t MAV_ID_NAV_CONTROLLER_OUTPUT = 62; //
+const uint8_t MAV_ID_VFR_HUD               = 74; //
 const uint8_t MAV_ID_TIMESYNC             = 111;
 const uint8_t MAV_ID_HIL_GPS              = 113;
-const uint8_t MAV_ID_ADSB_VEHICLE         = 246; // traffic information sent by an ADS-B receiver
-const uint8_t MAV_ID_COLLISION            = 247; // collision threat detected by auto-pilot
-const uint8_t MAV_ID_STATUSTEXT           = 253;
+const uint8_t MAV_ID_SCALED_IMU2          = 116; //
+const uint8_t MAV_ID_POWER_STATUS         = 125; //   5V and servo power and status
+const uint8_t MAV_ID_TERRAIN_REPORT       = 136; //
+const uint8_t MAV_ID_BATTERY_STATUS       = 147; // 
+const uint8_t MAV_ID_ADSB_VEHICLE         = 246; // + traffic information sent by an ADS-B receiver
+const uint8_t MAV_ID_COLLISION            = 247; // + collision threat detected by auto-pilot
+const uint8_t MAV_ID_STATUSTEXT           = 253; // +
 const uint8_t MAV_ID_DEBUG                = 254;
 
 // --------------------------------------------------------------------------------
 
-class MAV_HEARTBEAT
+class MAV_HEARTBEAT // 0
 { public:
    uint32_t     custom_mode;
-   uint8_t             type; // MAV-aircraft-type: 1=fixed wing, 2=quadrotor, 7=airship, 8=balloon, 13=hexarotor
+   uint8_t             type; // MAV-aircraft-type: 1=fixed wing, 2=quadrotor, 7=airship, 8=balloon, D=hexarotor
    uint8_t        autopilot; // 3=ArduPilotMega, 4=OpenPilot, 13=PX4
    union
    { uint8_t      base_mode;
@@ -66,16 +71,7 @@ class MAV_HEARTBEAT
    { printf("HEARTBEAT: t%X v%d\n", type, mavlink_version); }
 } ;
 
-class MAV_SYSTEM_TIME
-{ public:
-   uint64_t time_unix_usec;  // [usec]
-   uint32_t   time_boot_ms;  // [ms]
-  public:
-   void Print(void) const
-   { printf("SYSTEM_TIME: %14.3f-%8.3f [sec]\n", 1e-6*time_unix_usec, 1e-3*time_boot_ms); }
-} ;
-
-class MAV_SYS_STATUS
+class MAV_SYS_STATUS // 1
 { public:
    uint32_t onboard_control_sensors_present;
    uint32_t onboard_control_sensors_enabled;
@@ -93,9 +89,30 @@ class MAV_SYS_STATUS
    { printf("SYS_STATUS: %3.1f%% %5.3fV %+5.2fA\n", 0.1*load, 1e-3*battery_voltage, 0.01*battery_current); }
 } ;
 
-class MAV_GPS_RAW_INT
+class MAV_SYSTEM_TIME // 2
 { public:
-   uint64_t          time_usec;  // [usec]       Time
+   uint64_t time_unix_usec;  // [usec]
+   uint32_t   time_boot_ms;  // [ms]
+  public:
+   void Print(void) const
+   { printf("SYSTEM_TIME: %14.3f-%8.3f [sec]\n", 1e-6*time_unix_usec, 1e-3*time_boot_ms); }
+} ;
+
+class MAV_PARAM_VALUE
+{ public:
+   float param_value;
+   uint16_t param_count;
+   uint16_t param_index;
+   char param_id[16];
+   uint8_t param_type; // (1)2=(u)int8, (3)/4=(u)int16_t, (5)/6=(u)int32_t, (7)/8=(u)int64_t, 9=float, 10=double
+  public:
+   void Print(void) const
+   { printf("PARAM_VALUE: %.16s t%X %d/%d\n", param_id, param_type, param_index, param_count); }
+} ;
+
+class MAV_GPS_RAW_INT // 24
+{ public:
+   uint64_t          time_usec;  // [usec]       Time-since-boot time or UTC
     int32_t                lat;  // [1e-7deg]    Latitude
     int32_t                lon;  // [1e-7deg]    Longitude
     int32_t                alt;  // [mm]         Altitude AMSL
@@ -112,8 +129,22 @@ class MAV_GPS_RAW_INT
    uint8_t  satellites_visible;  // []           Number of satellites
   public:
    void Print(void) const
-   { printf("GPS_RAW_INT: [%+9.5f, %+10.5f]deg %+5.1fm %3.1fm/s %05.1fdeg %d/%dsat\n",
-           1e-7*lat, 1e-7*lon, 1e-3*alt, 0.01*vel, 0.01*cog, fix_type, satellites_visible); }
+   { printf("GPS_RAW_INT: %14.3fsec [%+9.5f, %+10.5f]deg %+5.1fm %3.1fm/s %05.1fdeg %d/%dsat\n",
+           1e-6*time_usec, 1e-7*lat, 1e-7*lon, 1e-3*alt, 0.01*vel, 0.01*cog, fix_type, satellites_visible); }
+} ;
+
+class MAV_RAW_IMU
+{ public:
+  uint64_t      time_usec;  // [usec]       Time-since-boot time or UTC
+   int16_t           xacc;  // [] Accelerometer
+   int16_t           yacc;
+   int16_t           zacc;
+   int16_t          xgyro;  // [] Gyroskop
+   int16_t          ygyro;
+   int16_t          zgyro;
+   int16_t           xmag;  // [] Magnetometer
+   int16_t           ymag;
+   int16_t           zmag;
 } ;
 
 class MAV_GLOBAL_POSITION_INT
@@ -121,17 +152,17 @@ class MAV_GLOBAL_POSITION_INT
    uint32_t  time_boot_ms;  // [ms]
     int32_t           lat;  // [1e-7deg]
     int32_t           lon;  // [1e-7deg]
-    int32_t           alt;  // [mm]
-    int32_t  relative_alt;  // [mm]
-    int16_t            vx;  // [cm]
-    int16_t            vy;  // [cm]
-    int16_t            vz;  // [cm]
-    int16_t           hdg;  // [0.01deg]
+    int32_t           alt;  // [mm]         AMSL
+    int32_t  relative_alt;  // [mm]         Above-takeoff ?
+    int16_t            vx;  // [cm/s]       along latitude: positive => north
+    int16_t            vy;  // [cm/s]       along longitude: positive => east
+    int16_t            vz;  // [cm/s]       sink rate: positive => down
+    int16_t           hdg;  // [0.01deg]    yaw angle
   public:
    void Print(void) const
    { uint16_t Track = IntAtan2(vy, vx);
-     printf("GLOBAL_POSITION_INT: [%+9.5f, %+10.5f]deg %5.1f(%+4.1f)m %3.1fm/s %05.1f/%05.1fdeg %+4.1fm/s\n",
-           1e-7*lat, 1e-7*lon, 1e-3*alt, 1e-3*relative_alt,
+     printf("GLOBAL_POSITION_INT: %10.3fsec [%+9.5f, %+10.5f]deg %5.1f(%+4.1f)m %3.1fm/s %05.1f/%05.1fdeg %+4.1fm/s\n",
+           1e-3*time_boot_ms, 1e-7*lat, 1e-7*lon, 1e-3*alt, 1e-3*relative_alt,
            0.01*IntSqrt((int32_t)vx*vx+(int32_t)vy*vy), 360.0/0x10000*Track, 0.01*hdg,
            0.01*vz); }
 } ;
@@ -144,7 +175,8 @@ class MAV_SCALED_PRESSURE
    int16_t   temperature; // [0.01degC]
   public:
    void Print(void) const
-   { printf("SCALED_PRESSURE: %8.3f [sec] %7.2f %+4.2f [hPa] %+5.2f [degC]\n", 1e-3*time_boot_ms, 2*press_abs, 2*press_diff, 0.01*temperature); }   
+   { printf("SCALED_PRESSURE: %8.3f [sec] %7.2f %+4.2f [hPa] %+5.2f [degC]\n",
+            1e-3*time_boot_ms, press_abs, press_diff, 0.01*temperature); } // with ms5607 there is a bug/feature: pressure is twice as low
 } ;
 
 class MAV_ADSB_VEHICLE    // this message is sent by ADS-B or other traffic receiver
@@ -159,24 +191,26 @@ class MAV_ADSB_VEHICLE    // this message is sent by ADS-B or other traffic rece
    union
    { uint16_t        flags; // validity: 1=coord. 2=alt. 4=heading 8=velocity 16=callsign 32=squawk 64=simulated
      struct
-     { bool    CoordValid:1;
-       bool      AltValid:1;
-       bool  HeadingValid:1;
-       bool CallsignValid:1;
-       bool VelocityValid:1;
-       bool   SquawkValid:1;
-       bool   isSimulated:1;
+     { bool    CoordValid:1; // #0
+       bool      AltValid:1; // #1
+       bool  HeadingValid:1; // #2
+       bool CallsignValid:1; // #3
+       bool VelocityValid:1; // #4
+       bool   SquawkValid:1; // #5
+       bool   isSimulated:1; // #6
      } ;
    } ;
    uint16_t       squawk;
    uint8_t altitude_type; // 0 = pressure/QNH, 1 = GPS
-   uint8_t   callsign[9]; // 8+null
+   char      callsign[9]; // 8+null
    uint8_t   emiter_type; // 0=no-info, 1=light, 2=small. 3=large, 4=high-vortex, 5=heavy, 6=manuv, 7=rotor, 9=glider, 10=balloon/airship, 11=parachute, 12=ULM, 14=UAV, 15=space, 19=obstacle
    uint8_t          tslc; // [sec] time since last communication
   public:
    void Print(void) const
-   { printf("ADSB_VEHICLE: %02X:%08lX [%+9.5f, %+10.5f]deg %5.1fm %3.1fm/s %05.1fdeg %+4.1fm/s\n",
-            (int)emiter_type, (long int)ICAO_address, 1e-7*lat, 1e-7*lon, 1e-3*altitude, 0.01*hor_velocity, 360.0/0x10000*heading, 0.01*ver_velocity); }
+   { printf("ADSB_VEHICLE: %.9s %02X:%08lX [%+9.5f, %+10.5f]deg %5.1fm %3.1fm/s %05.1fdeg %+4.1fm/s %dsec\n",
+            callsign, (int)emiter_type, (long int)ICAO_address,
+            1e-7*lat, 1e-7*lon, 1e-3*altitude, 0.01*hor_velocity, 360.0/0x10000*heading, 0.01*ver_velocity,
+            tslc); }
 } ;
 
 class COLLISION                    // this message is sent by the autopilot when it detects a collision threat
@@ -230,6 +264,7 @@ class MAV_RxMsg // receiver for the MAV messages
          else if(getMsgID()==MAV_ID_GPS_RAW_INT            ) { ((const MAV_GPS_RAW_INT             *)getPayload())->Print(); }
          else if(getMsgID()==MAV_ID_GLOBAL_POSITION_INT    ) { ((const MAV_GLOBAL_POSITION_INT     *)getPayload())->Print(); }
          else if(getMsgID()==MAV_ID_ADSB_VEHICLE           ) { ((const MAV_ADSB_VEHICLE            *)getPayload())->Print(); }
+         else if(getMsgID()==MAV_ID_PARAM_VALUE            ) { ((const MAV_PARAM_VALUE             *)getPayload())->Print(); }
        }
      }
    }
