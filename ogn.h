@@ -145,8 +145,8 @@ class OGN_Packet           // Packet structure for the OGN tracker
      unsigned int FixQuality: 2;
      unsigned int AudioNoise: 8; // [dB]                //
      unsigned int RadioNoise: 8; // [dBm]               // noise seen by the RF chip
-     unsigned int Temperature:9; // [0.1degC] VR        // temperature by the baro or RF chip
-     unsigned int Humidity  : 7; // [%]                 // humidity
+     unsigned int Temperature:8; // [0.1degC] VR        // temperature by the baro or RF chip
+     unsigned int Humidity  : 8; // [%]                 // humidity
      unsigned int Altitude  :14; // [m] VR              // same as in the position packet
      unsigned int Pressure  :14; // [0.08hPa]           // barometric pressure
      unsigned int Satellites: 4; // [ ]
@@ -206,8 +206,9 @@ class OGN_Packet           // Packet structure for the OGN tracker
      printf("\n"); }
 
    int WriteDeviceStatus(char *Out)
-   { return sprintf(Out, " h%02X v%02X %dsat/%d %ldm %3.1fhPa %+4.1fdegC %d%% %4.2fV %d/%+4.1fdBm %d/min",
-             Status.Hardware, Status.Firmware, Status.Satellites, Status.FixQuality, (long int)DecodeAltitude(), 0.08*Status.Pressure, 0.1*DecodeTemperature(), Status.Humidity,
+   { return sprintf(Out, " h%02X v%02X %dsat/%d %ldm %3.1fhPa %+4.1fdegC %3.1f%% %4.2fV %d/%+4.1fdBm %d/min",
+             Status.Hardware, Status.Firmware, Status.Satellites, Status.FixQuality,
+             (long int)DecodeAltitude(), 0.08*Status.Pressure, 0.1*DecodeTemperature(), 0.1*DecodeHumidity(),
              (1.0/64)*DecodeVoltage(), Status.TxPower+4, -0.5*Status.RadioNoise, (1<<Status.RxRate)-1 );
    }
 
@@ -219,8 +220,9 @@ class OGN_Packet           // Packet structure for the OGN tracker
    void PrintDeviceStatus(void) const
    { printf("%c:%06lX R%c%c %02ds:",
              '0'+Header.AddrType, (long int)Header.Address, '0'+Header.RelayCount, Header.Emergency?'E':' ', Status.Time);
-     printf(" h%02X v%02X %dsat/%d %ldm %3.1fhPa %+4.1fdegC %d%% %4.2fV Tx:%ddBm Rx:%+4.1fdBm %d/min",
-             Status.Hardware, Status.Firmware, Status.Satellites, Status.FixQuality, (long int)DecodeAltitude(), 0.08*Status.Pressure, 0.1*DecodeTemperature(), Status.Humidity,
+     printf(" h%02X v%02X %dsat/%d %ldm %3.1fhPa %+4.1fdegC %3.1f%% %4.2fV Tx:%ddBm Rx:%+4.1fdBm %d/min",
+             Status.Hardware, Status.Firmware, Status.Satellites, Status.FixQuality,
+             (long int)DecodeAltitude(), 0.08*Status.Pressure, 0.1*DecodeTemperature(), 0.1*DecodeHumidity(),
              (1.0/64)*DecodeVoltage(), Status.TxPower+4, -0.5*Status.RadioNoise, (1<<Status.RxRate)-1 );
      printf("\n");
    }
@@ -678,11 +680,18 @@ class OGN_Packet           // Packet structure for the OGN tracker
 // --------------------------------------------------------------------------------------------------------------
 // Status fields
 
+   void clrTemperature(void)              { Status.Temperature=0x80; }
+   bool hasTemperature(void)       const  { return Status.Temperature==0x80; }
    void EncodeTemperature(int16_t Temp)   { Status.Temperature=EncodeSR2V5(Temp-200); } // [0.1degC]
    int16_t DecodeTemperature(void) const  { return 200+DecodeSR2V5(Status.Temperature); }
 
    void EncodeVoltage(uint16_t Voltage)   { Status.Voltage=EncodeUR2V6(Voltage); }      // [1/64V]
   uint16_t DecodeVoltage(void) const      { return DecodeUR2V6(Status.Voltage); }
+
+   void clrHumidity(void)                 { Status.Humidity=0x80; }
+   bool hasHumidity(void)        const    { return Status.Humidity==0x80; }
+   void EncodeHumidity(uint16_t Hum)      { Status.Humidity=EncodeSR2V5((int16_t)(Hum-520)); }     // [0.1%]
+   uint16_t DecodeHumidity(void) const    { return 520+DecodeSR2V5(Status.Humidity); }
 
 // --------------------------------------------------------------------------------------------------------------
 // Info fields: pack and unpack 7-bit char into the Info packets
@@ -1332,6 +1341,7 @@ class GPS_Position
    int16_t Temperature;         // [0.1 degC]
   uint32_t Pressure;            // [0.25 Pa]   from pressure sensor
    int32_t StdAltitude;         // [0.1 meter] standard pressure altitude (from the pressure sensor and atmosphere calculator)
+   int16_t Humidity;            // [0.1%]      relative humidity
 
   public:
 
@@ -1344,7 +1354,7 @@ class GPS_Position
      Latitude=0; Longitude=0; LatitudeCosine=3000;
      Altitude=0; GeoidSeparation=0;
      Speed=0; Heading=0; ClimbRate=0; TurnRate=0;
-     Temperature=0; Pressure=0; StdAltitude=0; }
+     Temperature=0; Pressure=0; StdAltitude=0; Humidity=0;}
 
    void setDefaultDate() { Year=00; Month=1; Day=1; } // default Date is 01-JAN-2000
    void setDefaultTime() { Hour=0;  Min=0;   Sec=0; FracSec=0; } // default Time is 00:00:00.00
@@ -1653,10 +1663,15 @@ class GPS_Position
      Packet.EncodeAltitude((Altitude+5)/10);
      if(hasBaro)
      { Packet.EncodeTemperature(Temperature);
-       Packet.Status.Pressure = (Pressure+16)>>5; }
+       Packet.Status.Pressure = (Pressure+16)>>5;
+       Packet.EncodeHumidity(Humidity);
+       // Packet.Status.Humidity=Humidity/10; //convert from [0.1%] to [%] so we can store it on 7 bits
+     }
      else
-     { Packet.Status.Pressure = 0; }
-     Packet.Status.Humidity=0;
+     { Packet.Status.Pressure = 0;
+       Packet.clrHumidity();
+       // Packet.Status.Humidity = 0;
+     }
    }
 
    // uint8_t getFreqPlan(void) const // get the frequency plan from Lat/Lon: 1 = Europe + Africa, 2 = USA/CAnada, 3 = Australia + South America, 4 = New Zeeland
